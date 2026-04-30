@@ -7,13 +7,17 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "predev": "run-s types",
-        "dev": "vite dev",
         "prebuild": "run-s types",
         "build": "vite build",
-        "preview": "vite preview",
+        "check": "run-s check:prettier",
+        "check:prettier": "prettier --check ./src",
         "predeploy": "run-s build",
         "deploy": "wrangler deploy",
+        "predev": "run-s types",
+        "dev": "vite dev",
+        "format": "run-s format:code",
+        "format:code": "prettier --write ./src",
+        "preview": "vite preview",
         "types": "wrangler types"
     },
     "dependencies": {
@@ -28,6 +32,7 @@
         "@types/react-dom": "^19.1.0",
         "@vitejs/plugin-react": "^4.5.0",
         "npm-run-all2": "^8.0.4",
+        "prettier": "^3.8.3",
         "typescript": "^6.0.3",
         "vite": "^6.3.0",
         "wrangler": "^4.86.0"
@@ -38,5 +43,23 @@
             "sharp",
             "workerd"
         ]
+    },
+    "prettier": {
+        "arrowParens": "always",
+        "bracketSameLine": false,
+        "bracketSpacing": true,
+        "checkIgnorePragma": true,
+        "endOfLine": "lf",
+        "experimentalTernaries": true,
+        "experimentalOperatorPosition": "start",
+        "htmlWhitespaceSensitivity": "css",
+        "jsxSingleQuote": false,
+        "objectWrap": "preserve",
+        "printWidth": 100,
+        "quoteProps": "consistent",
+        "tabWidth": 2,
+        "semi": true,
+        "singleQuote": false,
+        "trailingComma": "none"
     }
 }
