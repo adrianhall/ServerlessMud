@@ -17,6 +17,16 @@
     ]
   },
 
+  "durable_objects": {
+    "bindings": [
+      { "name": "ZONE_PROCESSOR", "class_name": "ZoneProcessor" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ZoneProcessor"] }
+  ],
+
   "observability": {
     "enabled": true
   }
