@@ -1,0 +1,23 @@
+{
+  // This is the configuration file for Cloudflare Wrangler.  If you change this,
+  // then remember to run `pnpm run build` to update the generated types.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "mud",
+  "compatibility_date": "2026-04-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/worker/index.ts",
+
+  // The project is a combination of a Worker and a static site, so we use the 
+  // 'assets' configuration to serve the static files and route API requests to
+  // the Worker.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

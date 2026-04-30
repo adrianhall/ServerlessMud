@@ -1,0 +1,53 @@
+:root {
+  --bg: #1a1a2e;
+  --fg: #e0e0e0;
+  --accent: #0f3460;
+  --highlight: #16c79a;
+  --error: #e74c3c;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Courier New", Courier, monospace;
+  background-color: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app {
+  text-align: center;
+  padding: 2rem;
+}
+
+h1 {
+  font-size: 2.5rem;
+  color: var(--highlight);
+  margin-bottom: 0.5rem;
+}
+
+p {
+  margin-top: 0.75rem;
+  line-height: 1.6;
+}
+
+.api-info {
+  color: var(--highlight);
+}
+
+.error {
+  color: var(--error);
+}
+
+.loading {
+  opacity: 0.6;
+}

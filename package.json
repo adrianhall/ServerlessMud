@@ -1,0 +1,42 @@
+{
+    "name": "serverless_mud",
+    "version": "0.0.1",
+    "description": "A simple MUD game built on Cloudflare Workers",
+    "license": "MIT",
+    "packageManager": "pnpm@10.33.2",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "predev": "run-s types",
+        "dev": "vite dev",
+        "prebuild": "run-s types",
+        "build": "vite build",
+        "preview": "vite preview",
+        "predeploy": "run-s build",
+        "deploy": "wrangler deploy",
+        "types": "wrangler types"
+    },
+    "dependencies": {
+        "hono": "^4.12.16",
+        "react": "^19.1.0",
+        "react-dom": "^19.1.0"
+    },
+    "devDependencies": {
+        "@cloudflare/vite-plugin": "^1.0.0",
+        "@types/node": "^25.6.0",
+        "@types/react": "^19.1.0",
+        "@types/react-dom": "^19.1.0",
+        "@vitejs/plugin-react": "^4.5.0",
+        "npm-run-all2": "^8.0.4",
+        "typescript": "^6.0.3",
+        "vite": "^6.3.0",
+        "wrangler": "^4.86.0"
+    },
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "esbuild",
+            "sharp",
+            "workerd"
+        ]
+    }
+}
