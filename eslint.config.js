@@ -14,9 +14,9 @@ export default tseslint.config(
   // ── Global ignores ────────────────────────────────────────────────────
   { ignores: ["dist/", ".wrangler/", "worker-configuration.d.ts"] },
 
-  // ── Base: all TypeScript source files ─────────────────────────────────
+  // ── Base: all TypeScript source and test files ─────────────────────────
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     rules: {
       "@typescript-eslint/no-unused-vars": [
@@ -30,9 +30,19 @@ export default tseslint.config(
     }
   },
 
-  // ── React (src/client) ────────────────────────────────────────────────
+  // ── Test relaxations ──────────────────────────────────────────────────
   {
-    files: ["src/client/**/*.{ts,tsx}"],
+    files: ["tests/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/ban-ts-comment": "off"
+    }
+  },
+
+  // ── React (src/client + tests/client) ─────────────────────────────────
+  {
+    files: ["src/client/**/*.{ts,tsx}", "tests/client/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh
@@ -46,9 +56,9 @@ export default tseslint.config(
     }
   },
 
-  // ── Worker (src/worker) ───────────────────────────────────────────────
+  // ── Worker (src/worker + tests/worker) ──────────────────────────────────
   {
-    files: ["src/worker/**/*.ts"],
+    files: ["src/worker/**/*.ts", "tests/worker/**/*.ts"],
     rules: {
       // Workers should never reference DOM APIs directly; the type-checker
       // already enforces this via the tsconfig, but these lint rules catch
