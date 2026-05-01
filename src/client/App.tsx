@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
+import GameDisplay from "./GameDisplay";
 
 /** Shape returned by `GET /api/version`. */
 interface ApiInfo {
@@ -34,6 +35,7 @@ function App() {
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gameActive, setGameActive] = useState(false);
 
   useEffect(() => {
     fetch("/api/version")
@@ -67,6 +69,23 @@ function App() {
       });
   }, []);
 
+  if (gameActive) {
+    return (
+      <>
+        {user && (
+          <div className="user-badge">
+            <span className="user-email">{user.email}</span>
+            <span className="user-id">{user.id}</span>
+          </div>
+        )}
+        <GameDisplay userEmail={user?.email ?? ""} />
+        <button className="leave-game-btn" type="button" onClick={() => setGameActive(false)}>
+          Leave Game
+        </button>
+      </>
+    );
+  }
+
   return (
     <div className="app">
       {user && (
@@ -94,6 +113,12 @@ function App() {
       )}
 
       {!info && !error && <p className="loading">Connecting...</p>}
+
+      {user && (
+        <button className="start-game-btn" type="button" onClick={() => setGameActive(true)}>
+          Start Game
+        </button>
+      )}
     </div>
   );
 }

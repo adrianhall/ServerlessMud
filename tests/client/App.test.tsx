@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import App from "../../src/client/App";
 
 /** Build a successful JSON response. */
@@ -109,5 +109,38 @@ describe("App", () => {
       expect(screen.getByText(/API error:/)).toBeInTheDocument();
     });
     expect(screen.getByText("API error: Health API responded with 401")).toBeInTheDocument();
+  });
+
+  it("renders Start Game button when user is loaded", async () => {
+    render(<App />);
+    expect(await screen.findByText("Start Game")).toBeInTheDocument();
+  });
+
+  it("switches to GameDisplay when Start Game is clicked", async () => {
+    // Stub WebSocket so GameDisplay doesn't fail in happy-dom.
+    class MockWS {
+      onopen: (() => void) | null = null;
+      onmessage: ((e: unknown) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      constructor() {
+        queueMicrotask(() => this.onopen?.());
+      }
+      close() {
+        this.onclose?.();
+      }
+    }
+    vi.stubGlobal("WebSocket", MockWS);
+
+    render(<App />);
+
+    const btn = await screen.findByText("Start Game");
+    fireEvent.click(btn);
+
+    // GameDisplay should be rendered -- look for the command input.
+    expect(screen.getByPlaceholderText("Enter command...")).toBeInTheDocument();
+
+    // Landing content should be gone.
+    expect(screen.queryByText("A MUD game built on Cloudflare Workers")).not.toBeInTheDocument();
   });
 });
