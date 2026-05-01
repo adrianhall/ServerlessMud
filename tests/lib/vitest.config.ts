@@ -14,7 +14,7 @@ export default defineConfig({
     })
   ],
   test: {
-    name: "worker",
+    name: "lib",
     include: ["**/*.test.ts"]
   }
 });

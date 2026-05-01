@@ -105,6 +105,7 @@ terraform.rc
 
 # Distribution files
 dist/
+tmp/
 
 # Generated files
 worker-configuration.d.ts
