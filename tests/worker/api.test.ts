@@ -94,4 +94,21 @@ describe("API routes", () => {
     const data = (await response.json()) as { error: string };
     expect(data.error).toBe("Expected WebSocket upgrade");
   });
+
+  it("GET /api/game/connect upgrades to WebSocket when authenticated", async () => {
+    const token = await signDevJwt("alice@example.com");
+    const response = await SELF.fetch("https://example.com/api/game/connect", {
+      headers: {
+        [JWT_HEADER]: token,
+        "Upgrade": "websocket",
+      },
+    });
+
+    expect(response.status).toBe(101);
+    expect(response.webSocket).not.toBeNull();
+
+    // Clean up the upgraded socket so the test does not leak.
+    response.webSocket!.accept();
+    response.webSocket!.close(1000, "test done");
+  });
 });
