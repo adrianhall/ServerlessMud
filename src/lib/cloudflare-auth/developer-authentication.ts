@@ -9,7 +9,8 @@
  */
 
 import type { Context, MiddlewareHandler } from "hono";
-import type { DeveloperAuthSettings } from "./types";
+import type { DeveloperAuthSettings, Logger } from "./types";
+import { createDefaultLogger } from "./default-logger";
 import {
   signDevJwt,
   buildCookieHeader,
@@ -20,6 +21,8 @@ import {
 } from "./jwt";
 import { matchPolicy } from "./policy";
 import { renderLoginPage } from "./login-page";
+
+const LOG_MODULE = "dev-auth";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -52,18 +55,19 @@ const DEFAULT_CALLBACK_PATH = "/_auth/callback";
  *    uniformly.
  */
 export function developerAuthentication(settings?: DeveloperAuthSettings): MiddlewareHandler {
-  const loginPath = settings?.loginPath ?? DEFAULT_LOGIN_PATH;
-  const callbackPath = settings?.callbackPath ?? DEFAULT_CALLBACK_PATH;
+  const loginPath = defaultTo(settings?.loginPath, DEFAULT_LOGIN_PATH);
+  const callbackPath = defaultTo(settings?.callbackPath, DEFAULT_CALLBACK_PATH);
   const policies = settings?.policies;
   const devSecret = settings?.devSecret;
   const tokenLifetime = settings?.tokenLifetime;
+  const log = createDefaultLogger(LOG_MODULE, settings?.logger);
 
   return async (c, next) => {
     // -----------------------------------------------------------------
     // 1.  Real Cloudflare Access headers present  →  no-op.
     // -----------------------------------------------------------------
     if (c.req.header(JWT_HEADER)) {
-      console.info("[dev-auth] Cloudflare Access headers detected – skipping developer auth");
+      log.info("Cloudflare Access headers detected – skipping developer auth");
       return next();
     }
 
@@ -73,7 +77,7 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
     // 2.  Path is public according to policies  →  pass through.
     // -----------------------------------------------------------------
     if (policies && matchPolicy(pathname, policies) === false) {
-      console.info(`[dev-auth] Path "${pathname}" is public – skipping auth`);
+      log.info("Path is public – skipping auth", { pathname });
       return next();
     }
 
@@ -81,7 +85,7 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
     // 3.  Serve login form.
     // -----------------------------------------------------------------
     if (pathname === loginPath && c.req.method === "GET") {
-      console.info("[dev-auth] Serving login page");
+      log.info("Serving login page");
       const redirect = defaultTo(new URL(c.req.url).searchParams.get("redirect"), "/");
       return c.html(renderLoginPage(callbackPath, redirect));
     }
@@ -90,7 +94,7 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
     // 4.  Process login callback.
     // -----------------------------------------------------------------
     if (pathname === callbackPath && c.req.method === "POST") {
-      return handleCallback(c, { loginPath, devSecret, tokenLifetime });
+      return handleCallback(c, { loginPath, devSecret, tokenLifetime, logger: log });
     }
 
     // -----------------------------------------------------------------
@@ -98,14 +102,14 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
     // -----------------------------------------------------------------
     const token = parseCookie(c.req.header("cookie"));
     if (token) {
-      return forwardWithHeaders(c, token, next);
+      return forwardWithHeaders(c, token, next, log);
     }
 
     // -----------------------------------------------------------------
     // 6.  No auth at all  →  redirect to login.
     // -----------------------------------------------------------------
     const redirectTarget = `${loginPath}?redirect=${encodeURIComponent(pathname)}`;
-    console.info(`[dev-auth] No auth found – redirecting to ${redirectTarget}`);
+    log.info("No auth found – redirecting to login", { redirectTarget });
     return c.redirect(redirectTarget, 302);
   };
 }
@@ -122,8 +126,9 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
  */
 export async function handleCallback(
   c: Context,
-  opts: { loginPath: string; devSecret?: string; tokenLifetime?: number }
+  opts: { loginPath: string; devSecret?: string; tokenLifetime?: number; logger?: Logger }
 ): Promise<Response> {
+  const log = createDefaultLogger(LOG_MODULE, opts.logger);
   let email: string | undefined;
   let redirect = "/";
 
@@ -132,15 +137,15 @@ export async function handleCallback(
     email = typeof body.email === "string" ? body.email.trim() : undefined;
     redirect = typeof body.redirect === "string" ? body.redirect : "/";
   } catch (err) {
-    console.error("[dev-auth] Failed to parse callback body", err);
+    log.error("Failed to parse callback body", { error: String(err) });
   }
 
   if (!email) {
-    console.warn("[dev-auth] Callback received without a valid email");
+    log.warn("Callback received without a valid email");
     return c.html(renderLoginPage(opts.loginPath, redirect, "A valid email address is required."));
   }
 
-  console.info(`[dev-auth] Issuing developer token for ${email}`);
+  log.info("Issuing developer token", { email });
 
   const token = await signDevJwt(email, {
     secret: opts.devSecret,
@@ -165,15 +170,18 @@ export async function handleCallback(
 export async function forwardWithHeaders(
   c: Context,
   token: string,
-  next: () => Promise<void>
+  next: () => Promise<void>,
+  logger?: Logger
 ): Promise<void | Response> {
+  const log = createDefaultLogger(LOG_MODULE, logger);
+
   // We intentionally do NOT validate the JWT here — that is the
   // responsibility of the cloudflareAccess middleware.  We simply
   // decode the payload to extract the email and sub for the header
   // values.
   const parts = token.split(".");
   if (parts.length !== 3) {
-    console.warn("[dev-auth] Malformed JWT in cookie – ignoring");
+    log.warn("Malformed JWT in cookie – ignoring");
     return next();
   }
 
@@ -190,9 +198,9 @@ export async function forwardWithHeaders(
     headers.set(USER_HEADER, sub);
     c.req.raw = new Request(c.req.raw, { headers });
 
-    console.info(`[dev-auth] Injected headers for ${email}`);
+    log.info("Injected headers", { email });
   } catch (err) {
-    console.warn("[dev-auth] Failed to decode JWT payload from cookie", err);
+    log.warn("Failed to decode JWT payload from cookie", { error: String(err) });
   }
 
   return next();

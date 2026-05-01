@@ -1,11 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import {
   cloudflareAccess,
   signDevJwt,
   JWT_HEADER,
   COOKIE_NAME,
-  type AuthVariables
+  type AuthVariables,
+  type Logger
 } from "@lib/cloudflare-auth";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +14,14 @@ import {
 // ---------------------------------------------------------------------------
 
 const BASE = "http://localhost";
+
+/** Silent logger that suppresses all output during tests. */
+const silentLogger: Logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+};
 
 /** Minimal Env stub with the team domain. */
 const MOCK_ENV = {
@@ -25,7 +34,7 @@ const MOCK_ENV = {
  */
 function createApp(settings?: Parameters<typeof cloudflareAccess>[0]) {
   const app = new Hono<{ Bindings: typeof MOCK_ENV; Variables: AuthVariables }>();
-  app.use(cloudflareAccess(settings));
+  app.use(cloudflareAccess({ logger: silentLogger, ...settings }));
 
   app.get("/api/test", (c) => {
     return c.json({

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import {
   developerAuthentication,
@@ -8,7 +8,8 @@ import {
   EMAIL_HEADER,
   USER_HEADER,
   COOKIE_NAME,
-  type AuthVariables
+  type AuthVariables,
+  type Logger
 } from "@lib/cloudflare-auth";
 import {
   handleCallback,
@@ -22,10 +23,18 @@ import {
 
 const BASE = "http://localhost";
 
+/** Silent logger that suppresses all output during tests. */
+const silentLogger: Logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+};
+
 /** Create a minimal Hono app with the dev auth middleware and a test route. */
 function createApp(settings?: Parameters<typeof developerAuthentication>[0]) {
   const app = new Hono<{ Variables: AuthVariables }>();
-  app.use(developerAuthentication(settings));
+  app.use(developerAuthentication({ logger: silentLogger, ...settings }));
 
   // Echo route — returns whatever headers the middleware injected.
   app.get("/api/test", (c) => {
@@ -242,7 +251,9 @@ describe("developerAuthentication middleware", () => {
       // Wrap the exported function in a tiny Hono route so we get a
       // real Context object.
       const app = new Hono();
-      app.post("/cb", (c) => handleCallback(c, { loginPath: "/_auth/login" }));
+      app.post("/cb", (c) =>
+        handleCallback(c, { loginPath: "/_auth/login", logger: silentLogger })
+      );
 
       // A malformed multipart body triggers a parse error inside Hono.
       const res = await app.request(`${BASE}/cb`, {
@@ -271,7 +282,7 @@ describe("developerAuthentication middleware", () => {
         let nextCalled = false;
         await forwardWithHeaders(c, "aaa.not-valid-base64.ccc", async () => {
           nextCalled = true;
-        });
+        }, silentLogger);
         // If next() was called the response is controlled by us.
         return c.json({ nextCalled });
       });

@@ -5,6 +5,29 @@
  */
 
 // ---------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal structured logger accepted by the authentication middleware.
+ *
+ * This interface is intentionally defined here (rather than imported
+ * from `cloudflare-logging`) so that the auth library remains
+ * standalone.  The `cloudflare-logging` package independently defines
+ * a structurally identical interface and can therefore satisfy this
+ * type without an explicit dependency.
+ *
+ * When no logger is provided the middleware falls back to a simple
+ * `console.*`-based default.
+ */
+export interface Logger {
+  debug(message: string, data?: Record<string, unknown>): void;
+  info(message: string, data?: Record<string, unknown>): void;
+  warn(message: string, data?: Record<string, unknown>): void;
+  error(message: string, data?: Record<string, unknown>): void;
+}
+
+// ---------------------------------------------------------------------------
 // Hono context variables
 // ---------------------------------------------------------------------------
 
@@ -88,6 +111,17 @@ export interface DeveloperAuthSettings {
 
   /** JWT lifetime in seconds (default `86400` / 24 h). */
   tokenLifetime?: number;
+
+  /**
+   * Optional structured logger.
+   *
+   * When omitted the middleware logs via `console.*` with a
+   * `[dev-auth]` prefix.  Pass a logger created by
+   * `cloudflare-logging` (or any object satisfying the
+   * {@link Logger} interface) to gain level filtering and
+   * formatted output.
+   */
+  logger?: Logger;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +181,17 @@ export interface CloudflareAccessSettings {
    * Defaults to the same well-known key.
    */
   devSecret?: string;
+
+  /**
+   * Optional structured logger.
+   *
+   * When omitted the middleware logs via `console.*` with a
+   * `[cf-access]` prefix.  Pass a logger created by
+   * `cloudflare-logging` (or any object satisfying the
+   * {@link Logger} interface) to gain level filtering and
+   * formatted output.
+   */
+  logger?: Logger;
 }
 
 // ---------------------------------------------------------------------------

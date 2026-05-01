@@ -17,6 +17,7 @@ import {
   type AuthVariables,
   type PathPolicy
 } from "@lib/cloudflare-auth";
+import { createLogger } from "@lib/cloudflare-logging";
 
 // Re-export Durable Object classes so the Workers runtime can find them.
 export { ZoneProcessor } from "./zone-processor";
@@ -36,11 +37,13 @@ const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 // Developer authentication simulates Cloudflare Access when running
 // locally.  In production (behind real Access) it is a transparent no-op.
-app.use(developerAuthentication({ policies: authPolicies }));
+const devAuthLogger = createLogger("dev-auth", { minLogLevel: "warn" });
+app.use(developerAuthentication({ policies: authPolicies, logger: devAuthLogger }));
 
 // Cloudflare Access middleware validates the JWT (real or dev-generated)
 // and sets `userEmail` / `userSub` on the Hono context.
-app.use(cloudflareAccess({ policies: authPolicies }));
+const accessLogger = createLogger("cf-access");
+app.use(cloudflareAccess({ policies: authPolicies, logger: accessLogger }));
 
 app.route("/api", api);
 

@@ -36,7 +36,8 @@ export type {
   AuthVariables,
   DeveloperAuthSettings,
   CloudflareAccessSettings,
-  PathPolicy
+  PathPolicy,
+  Logger
 } from "./types";
 
 // Policy evaluation

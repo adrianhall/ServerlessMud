@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Hono } from "hono";
 import {
   developerAuthentication,
@@ -7,7 +7,8 @@ import {
   COOKIE_NAME,
   JWT_HEADER,
   type AuthVariables,
-  type PathPolicy
+  type PathPolicy,
+  type Logger
 } from "@lib/cloudflare-auth";
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,14 @@ import {
 // ---------------------------------------------------------------------------
 
 const BASE = "http://localhost";
+
+/** Silent logger that suppresses all output during tests. */
+const silentLogger: Logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+};
 
 const MOCK_ENV = {
   CLOUDFLARE_TEAM_DOMAIN: "test.cloudflareaccess.com"
@@ -30,8 +39,8 @@ const authPolicies: PathPolicy[] = [
 function createApp() {
   const app = new Hono<{ Bindings: typeof MOCK_ENV; Variables: AuthVariables }>();
 
-  app.use(developerAuthentication({ policies: authPolicies }));
-  app.use(cloudflareAccess({ policies: authPolicies }));
+  app.use(developerAuthentication({ policies: authPolicies, logger: silentLogger }));
+  app.use(cloudflareAccess({ policies: authPolicies, logger: silentLogger }));
 
   app.get("/api/version", (c) => c.json({ version: "1.0" }));
   app.get("/api/me", (c) =>
@@ -129,8 +138,8 @@ describe("auth integration (both middleware together)", () => {
       { pattern: /^\/api\//, authenticate: false } // open by default
     ];
 
-    app.use(developerAuthentication({ policies }));
-    app.use(cloudflareAccess({ policies, defaultAction: "bypass" }));
+    app.use(developerAuthentication({ policies, logger: silentLogger }));
+    app.use(cloudflareAccess({ policies, defaultAction: "bypass", logger: silentLogger }));
 
     app.get("/api/open", (c) =>
       c.json({ email: c.get("userEmail") ?? null })

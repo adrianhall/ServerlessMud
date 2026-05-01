@@ -10,7 +10,8 @@
  */
 
 import type { MiddlewareHandler } from "hono";
-import type { CloudflareAccessSettings } from "./types";
+import type { CloudflareAccessSettings, Logger } from "./types";
+import { createDefaultLogger } from "./default-logger";
 import { matchPolicy } from "./policy";
 import {
   verifyDevJwt,
@@ -20,6 +21,8 @@ import {
   DEFAULT_DEV_SECRET,
   type VerifiedToken
 } from "./jwt";
+
+const LOG_MODULE = "cf-access";
 
 // ---------------------------------------------------------------------------
 // Middleware factory
@@ -56,6 +59,7 @@ export function cloudflareAccess(settings?: CloudflareAccessSettings): Middlewar
   const devSecret = settings?.devSecret ?? DEFAULT_DEV_SECRET;
   const audience = settings?.audience;
   const teamDomainOverride = settings?.teamDomain;
+  const log = createDefaultLogger(LOG_MODULE, settings?.logger);
 
   return async (c, next) => {
     const pathname = new URL(c.req.url).pathname;
@@ -67,7 +71,7 @@ export function cloudflareAccess(settings?: CloudflareAccessSettings): Middlewar
 
     if (policyMatch === false) {
       // Explicitly public — skip JWT validation entirely.
-      console.info(`[cf-access] Path "${pathname}" is public – bypassing auth`);
+      log.debug("Path is public – bypassing auth", { pathname });
       return next();
     }
 
@@ -85,11 +89,11 @@ export function cloudflareAccess(settings?: CloudflareAccessSettings): Middlewar
 
     if (!token) {
       if (authRequired) {
-        console.warn("[cf-access] No JWT found in header or cookie");
+        log.warn("No JWT found in header or cookie");
         return c.json({ error: "Authentication required" }, 401);
       }
       // Optional auth — no token, continue without user info.
-      console.info(`[cf-access] No JWT for "${pathname}" – continuing (bypass)`);
+      log.debug("No JWT – continuing (bypass)", { pathname });
       return next();
     }
 
@@ -99,11 +103,12 @@ export function cloudflareAccess(settings?: CloudflareAccessSettings): Middlewar
     const result = await verifyToken(c, token, {
       devSecret,
       audience,
-      teamDomainOverride
+      teamDomainOverride,
+      logger: log
     });
 
     if (result) {
-      console.info(`[cf-access] Verified token for ${result.email}`);
+      log.debug("Verified token", { email: result.email });
       c.set("userEmail", result.email);
       c.set("userSub", result.sub);
       return next();
@@ -113,12 +118,12 @@ export function cloudflareAccess(settings?: CloudflareAccessSettings): Middlewar
     // 4.  Verification failed.
     // -----------------------------------------------------------------
     if (authRequired) {
-      console.warn("[cf-access] JWT verification failed");
+      log.warn("JWT verification failed");
       return c.json({ error: "Invalid or expired token" }, 401);
     }
 
     // Optional auth — bad token, continue without user info.
-    console.info(`[cf-access] JWT invalid for "${pathname}" – continuing (bypass)`);
+    log.info("JWT invalid – continuing (bypass)", { pathname });
     return next();
   };
 }
@@ -140,8 +145,11 @@ async function verifyToken(
     devSecret: string;
     audience?: string;
     teamDomainOverride?: string;
+    logger?: Logger;
   }
 ): Promise<VerifiedToken | null> {
+  const log = createDefaultLogger(LOG_MODULE, opts.logger);
+
   // Fast path: dev-signed token.
   const devResult = await verifyDevJwt(token, opts.devSecret);
   if (devResult) return devResult;
@@ -151,8 +159,8 @@ async function verifyToken(
     opts.teamDomainOverride ?? (c.env as Record<string, string | undefined>).CLOUDFLARE_TEAM_DOMAIN;
 
   if (!teamDomain) {
-    console.error(
-      "[cf-access] No team domain configured – set CLOUDFLARE_TEAM_DOMAIN in env or pass teamDomain in settings"
+    log.error(
+      "No team domain configured – set CLOUDFLARE_TEAM_DOMAIN in env or pass teamDomain in settings"
     );
     return null;
   }
