@@ -41,4 +41,57 @@ describe("API routes", () => {
     expect(data.status).toBe("ok");
     expect(data.timestamp).toBeTruthy();
   });
+
+  it("POST /api/game/input returns 200 with valid input", async () => {
+    const token = await signDevJwt("test@example.com");
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        [JWT_HEADER]: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text: "hello" }),
+    });
+    expect(response.status).toBe(200);
+
+    const data = (await response.json()) as { ok: boolean };
+    expect(data).toEqual({ ok: true });
+  });
+
+  it("POST /api/game/input returns 400 with missing text", async () => {
+    const token = await signDevJwt("test@example.com");
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        [JWT_HEADER]: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("POST /api/game/input returns 400 with empty text", async () => {
+    const token = await signDevJwt("test@example.com");
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        [JWT_HEADER]: token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text: "" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("GET /api/game/connect returns 400 without upgrade header", async () => {
+    const token = await signDevJwt("test@example.com");
+    const response = await SELF.fetch("https://example.com/api/game/connect", {
+      headers: { [JWT_HEADER]: token },
+    });
+    expect(response.status).toBe(400);
+
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("Expected WebSocket upgrade");
+  });
 });
