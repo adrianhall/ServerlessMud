@@ -8,18 +8,19 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import { createLogger } from "@lib/cloudflare-logging";
 import type { WebSocketAttachment } from "./types";
-
-const log = createLogger("game_log", { minLogLevel: "debug" });
+import { CommunicationHandler } from "./communication";
 
 /**
  * A Durable Object that manages a single game zone, providing health status and (eventually)
  * zone-specific game logic such as NPC ticks, environment updates, etc.
  */
 export class ZoneProcessor extends DurableObject<Env> {
+  private comms: CommunicationHandler;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.comms = new CommunicationHandler(ctx);
   }
 
   /** Returns a lightweight health-check payload. */
@@ -47,19 +48,29 @@ export class ZoneProcessor extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [email]);
     server.serializeAttachment({ email, sub } satisfies WebSocketAttachment);
-
-    log.debug("websocket accepted", { email });
+    this.comms.registerConnection(email, server);
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /**
+   * Process a game command from a user. Broadcasts the result to all
+   * connected WebSockets: the sender sees "You said '...'" while
+   * everyone else sees "<email> said '...'".
+   *
+   * Called via RPC from the Worker route (POST /api/game/input).
+   */
+  async processInput(userEmail: string, text: string): Promise<void> {
+    this.comms.broadcast(
+      userEmail,
+      { type: "message", sub: userEmail, details: { message: `You said '${text}'` } },
+      { type: "message", sub: userEmail, details: { message: `${userEmail} said '${text}'` } }
+    );
+  }
+
   /** Log unexpected client messages (input should arrive via POST). */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-    log.debug("unexpected client message", {
-      email: attachment?.email ?? "unknown",
-      message: typeof message === "string" ? message : "(binary)"
-    });
+    this.comms.handleMessage(ws, message);
   }
 
   /** Clean up on WebSocket close. */
@@ -69,18 +80,11 @@ export class ZoneProcessor extends DurableObject<Env> {
     reason: string,
     wasClean: boolean
   ): Promise<void> {
-    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-    const email = attachment?.email ?? "unknown";
-    log.debug("websocket closed", { email, code, reason, wasClean });
-    ws.close(code, reason);
+    this.comms.handleClose(ws, code, reason, wasClean);
   }
 
   /** Log WebSocket errors. */
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
-    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-    log.error("websocket error", {
-      email: attachment?.email ?? "unknown",
-      error: String(error)
-    });
+    this.comms.handleError(ws, error);
   }
 }
