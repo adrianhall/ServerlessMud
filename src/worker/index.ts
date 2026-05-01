@@ -1,9 +1,10 @@
 /**
  * Worker entry point.
  *
- * Sets up a Hono application that serves the `/api` route tree.  All
- * non-asset, non-navigation requests are forwarded here by the Workers
- * static-asset router (see `wrangler.jsonc`).
+ * Every request hits the Worker first (`run_worker_first: true` in
+ * `wrangler.jsonc`).  Authentication middleware runs on all paths,
+ * API routes are handled by Hono, and everything else falls through
+ * to the static-asset binding.
  *
  * @module
  */
@@ -27,7 +28,6 @@ export { ZoneProcessor } from "./zone-processor";
  */
 const authPolicies: PathPolicy[] = [
   { pattern: /^\/api\/version$/, authenticate: false },
-  { pattern: /^\/api\/health$/, authenticate: false },
   { pattern: /^\/api\//, authenticate: true }
 ];
 
@@ -43,5 +43,13 @@ app.use(developerAuthentication({ policies: authPolicies }));
 app.use(cloudflareAccess({ policies: authPolicies }));
 
 app.route("/api", api);
+
+// Catch-all: after auth middleware and API routes, serve static assets
+// (the React SPA) via the ASSETS binding.  Note that this cannot be
+// checked in coverage since c.env.ASSETS is not callable in unit tests.
+/* istanbul ignore next -- @preserve */
+app.all("*", async (c) => {
+  return c.env.ASSETS.fetch(c.req.raw);
+});
 
 export default app;

@@ -182,9 +182,13 @@ export async function forwardWithHeaders(
     const email: string = defaultTo(payload.email, "");
     const sub: string = defaultTo(payload.sub, "");
 
-    c.req.raw.headers.set(JWT_HEADER, token);
-    c.req.raw.headers.set(EMAIL_HEADER, email);
-    c.req.raw.headers.set(USER_HEADER, sub);
+    // Incoming request headers are immutable in the Workers runtime,
+    // so clone the request with the additional headers.
+    const headers = new Headers(c.req.raw.headers);
+    headers.set(JWT_HEADER, token);
+    headers.set(EMAIL_HEADER, email);
+    headers.set(USER_HEADER, sub);
+    c.req.raw = new Request(c.req.raw, { headers });
 
     console.info(`[dev-auth] Injected headers for ${email}`);
   } catch (err) {

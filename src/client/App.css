@@ -44,6 +44,11 @@ p {
   color: var(--highlight);
 }
 
+.health-info {
+  color: var(--highlight);
+  opacity: 0.8;
+}
+
 .error {
   color: var(--error);
 }
