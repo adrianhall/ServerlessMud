@@ -22,10 +22,17 @@ interface HealthInfo {
   timestamp: string;
 }
 
+/** Shape returned by `GET /api/me`. */
+interface UserInfo {
+  email: string;
+  id: string;
+}
+
 /** Root application component. */
 function App() {
   const [info, setInfo] = useState<ApiInfo | null>(null);
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,10 +55,27 @@ function App() {
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Unknown error");
       });
+
+    fetch("/api/me")
+      .then((res) => {
+        if (!res.ok) throw new Error(`User API responded with ${res.status}`);
+        return res.json() as Promise<UserInfo>;
+      })
+      .then(setUser)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      });
   }, []);
 
   return (
     <div className="app">
+      {user && (
+        <div className="user-badge">
+          <span className="user-email">{user.email}</span>
+          <span className="user-id">{user.id}</span>
+        </div>
+      )}
+
       <h1>ServerlessMud</h1>
       <p>A MUD game built on Cloudflare Workers</p>
 

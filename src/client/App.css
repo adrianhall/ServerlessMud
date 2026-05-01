@@ -27,6 +27,31 @@ body {
 .app {
   text-align: center;
   padding: 2rem;
+  position: relative;
+}
+
+.user-badge {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--accent);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.user-email {
+  color: var(--highlight);
+}
+
+.user-id {
+  color: var(--fg);
+  opacity: 0.6;
+  font-size: 0.7rem;
 }
 
 h1 {

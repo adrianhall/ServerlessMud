@@ -18,6 +18,18 @@ describe("API routes", () => {
     expect(response.headers.get("location")).toContain("/_auth/login");
   });
 
+  it("GET /api/me returns user email and id when authenticated", async () => {
+    const token = await signDevJwt("test@example.com");
+    const response = await SELF.fetch("https://example.com/api/me", {
+      headers: { [JWT_HEADER]: token }
+    });
+    expect(response.status).toBe(200);
+
+    const data = (await response.json()) as { email: string; id: string };
+    expect(data.email).toBe("test@example.com");
+    expect(data.id).toBe("dev-test@example.com");
+  });
+
   it("GET /api/health returns health status when authenticated", async () => {
     const token = await signDevJwt("test@example.com");
     const response = await SELF.fetch("https://example.com/api/health", {
