@@ -22,9 +22,12 @@
         "format": "run-s format:code",
         "format:code": "prettier --write ./src",
         "preview": "vite preview",
-        "types": "wrangler types"
+        "types": "wrangler types",
+        "generate:world": "tsx src/tools/generate-world/index.ts"
     },
     "dependencies": {
+        "chalk": "^5.6.2",
+        "commander": "^14.0.3",
         "hono": "^4.12.16",
         "jose": "^6.2.3",
         "react": "^19.1.0",
@@ -48,6 +51,7 @@
         "happy-dom": "^20.9.0",
         "npm-run-all2": "^8.0.4",
         "prettier": "^3.8.3",
+        "tsx": "^4.21.0",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.59.1",
         "vite": "^6.3.0",

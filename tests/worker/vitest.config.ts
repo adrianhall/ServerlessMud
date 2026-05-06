@@ -15,6 +15,9 @@ export default defineConfig({
   ],
   test: {
     name: "worker",
-    include: ["**/*.test.ts"]
+    include: ["**/*.test.ts"],
+    env: {
+      LOG_LEVEL: "silent"
+    }
   }
 });

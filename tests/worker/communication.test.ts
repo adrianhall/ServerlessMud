@@ -13,7 +13,15 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CommunicationHandler } from "../../src/worker/communication";
+import type { Logger } from "@lib/cloudflare-logging";
 import type { GameMessage, WebSocketAttachment } from "../../src/worker/types";
+
+const silentLogger: Logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+};
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -84,7 +92,7 @@ function makeMockState(websockets: MockWebSocket[] = []) {
  */
 function makeHandler() {
   const { ctx, setWebSocketAutoResponse } = makeMockState();
-  const handler = new CommunicationHandler(ctx);
+  const handler = new CommunicationHandler(ctx, silentLogger);
   return { handler, setWebSocketAutoResponse };
 }
 
@@ -107,7 +115,7 @@ describe("CommunicationHandler constructor", () => {
     });
     const { ctx } = makeMockState([ws1, ws2]);
 
-    const handler = new CommunicationHandler(ctx);
+    const handler = new CommunicationHandler(ctx, silentLogger);
 
     expect(handler.connectionCount()).toBe(2);
   });
@@ -119,7 +127,7 @@ describe("CommunicationHandler constructor", () => {
     const orphanWs = makeMockWebSocket({ attachment: null });
     const { ctx } = makeMockState([orphanWs, validWs]);
 
-    const handler = new CommunicationHandler(ctx);
+    const handler = new CommunicationHandler(ctx, silentLogger);
 
     // Only the valid attachment is hydrated.
     expect(handler.connectionCount()).toBe(1);
@@ -134,7 +142,7 @@ describe("CommunicationHandler constructor", () => {
     });
     const { ctx } = makeMockState([first, second]);
 
-    const handler = new CommunicationHandler(ctx);
+    const handler = new CommunicationHandler(ctx, silentLogger);
 
     // Both rows collapse onto a single email, so count stays at 1.
     expect(handler.connectionCount()).toBe(1);

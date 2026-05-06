@@ -10,16 +10,16 @@
  * @module
  */
 
-import { createLogger } from "@lib/cloudflare-logging";
+import type { Logger } from "@lib/cloudflare-logging";
 import type { GameMessage, WebSocketAttachment } from "./types";
-
-const log = createLogger("game_log", { minLogLevel: "debug" });
 
 export class CommunicationHandler {
   private connections: Map<string, WebSocket>;
+  private log: Logger;
 
-  constructor(ctx: DurableObjectState) {
+  constructor(ctx: DurableObjectState, log: Logger) {
     this.connections = new Map();
+    this.log = log;
 
     // Hydrate from existing websockets (handles hibernation wake-up).
     // After hibernation the DO constructor re-runs.  getWebSockets()
@@ -37,7 +37,7 @@ export class CommunicationHandler {
     // with "pong" without waking the DO from hibernation.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
 
-    log.debug("communication handler initialized", {
+    this.log.debug("communication handler initialized", {
       connections: this.connectionCount()
     });
   }
@@ -55,11 +55,11 @@ export class CommunicationHandler {
   registerConnection(email: string, ws: WebSocket): void {
     const existing = this.connections.get(email);
     if (existing) {
-      log.debug("evicting previous connection", { email });
+      this.log.debug("evicting previous connection", { email });
       existing.close(1008, "replaced by new connection");
     }
     this.connections.set(email, ws);
-    log.debug("connection registered", {
+    this.log.debug("connection registered", {
       email,
       total: this.connectionCount()
     });
@@ -84,7 +84,7 @@ export class CommunicationHandler {
       // The platform handles the close handshake automatically via
       // web_socket_auto_reply_to_close.
     }
-    log.debug("websocket closed", { email, code, reason, wasClean });
+    this.log.debug("websocket closed", { email, code, reason, wasClean });
   }
 
   /**
@@ -94,7 +94,7 @@ export class CommunicationHandler {
    */
   handleMessage(ws: WebSocket, message: string | ArrayBuffer): void {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
-    log.debug("unexpected client message", {
+    this.log.debug("unexpected client message", {
       email: attachment?.email ?? "unknown",
       message: typeof message === "string" ? message : "(binary)"
     });
@@ -110,7 +110,7 @@ export class CommunicationHandler {
     if (this.connections.get(email) === ws) {
       this.connections.delete(email);
     }
-    log.error("websocket error", { email, error: String(error) });
+    this.log.error("websocket error", { email, error: String(error) });
   }
 
   // -------------------------------------------------------------------
@@ -130,7 +130,7 @@ export class CommunicationHandler {
       ws.send(payload);
       sent++;
     }
-    log.debug("broadcast complete", { senderEmail, sent });
+    this.log.debug("broadcast complete", { senderEmail, sent });
   }
 
   // -------------------------------------------------------------------

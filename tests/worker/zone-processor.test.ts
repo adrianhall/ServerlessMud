@@ -103,8 +103,12 @@ describe("ZoneProcessor", () => {
 
     const aliceMessages: string[] = [];
     const bobMessages: string[] = [];
-    ws1.addEventListener("message", (e) => aliceMessages.push(e.data as string));
-    ws2.addEventListener("message", (e) => bobMessages.push(e.data as string));
+    ws1.addEventListener("message", (e) => {
+      aliceMessages.push(e.data as string);
+    });
+    ws2.addEventListener("message", (e) => {
+      bobMessages.push(e.data as string);
+    });
 
     await stub.processInput("alice@example.com", "wave");
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -144,7 +148,9 @@ describe("ZoneProcessor", () => {
 
     // New socket should still receive broadcasts.
     const messages: string[] = [];
-    ws2.addEventListener("message", (e) => messages.push(e.data as string));
+    ws2.addEventListener("message", (e) => {
+      messages.push(e.data as string);
+    });
 
     await stub.processInput("alice@example.com", "hello");
     await new Promise((resolve) => setTimeout(resolve, 50));

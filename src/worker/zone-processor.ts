@@ -8,6 +8,7 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
+import { createLogger } from "@lib/cloudflare-logging";
 import type { WebSocketAttachment } from "./types";
 import { CommunicationHandler } from "./communication";
 
@@ -20,7 +21,8 @@ export class ZoneProcessor extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.comms = new CommunicationHandler(ctx);
+    const log = createLogger("game_log");
+    this.comms = new CommunicationHandler(ctx, log);
   }
 
   /** Returns a lightweight health-check payload. */
