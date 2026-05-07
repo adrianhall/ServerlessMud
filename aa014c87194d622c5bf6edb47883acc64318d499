@@ -1,0 +1,39 @@
+migrations/map/0002_seed_data.sql
+  4128e225c171fc71 3
+tests/worker/communication.test.ts
+  4128e225c171fc71 535-562
+src/client/GameDisplay.tsx
+  4128e225c171fc71 13-17,33-42,46,60,74,80,84,91,135-139,147-150,154,187,192-195,197-200,205-207,213,216-221,224
+tests/worker/zone-processor.test.ts
+  4128e225c171fc71 170-171,191,193,199-235,238-239,262,266,270,277,307,313,321-352,354-423,426-452,476,485
+src/client/App.css
+  4128e225c171fc71 434-441
+src/worker/communication.ts
+  4128e225c171fc71 163-177
+src/worker/zone-processor.ts
+  4128e225c171fc71 40-45,52,212,214-240,242-282,285-292,294-298,329,331
+src/client/GameOutput.tsx
+  4128e225c171fc71 3-7,11,35-36
+tests/client/GameDisplay.test.tsx
+  4128e225c171fc71 147-167,561-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "aa014c87194d622c5bf6edb47883acc64318d499",
+  "prompts": {
+    "4128e225c171fc71": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1fc7acad5ffeHqnbRuWXnpwgQT",
+        "model": "openai/gpt-5.5"
+      },
+      "human_author": "ahall",
+      "messages": [],
+      "total_additions": 437,
+      "total_deletions": 55,
+      "accepted_lines": 437,
+      "overriden_lines": 0
+    }
+  }
+}
