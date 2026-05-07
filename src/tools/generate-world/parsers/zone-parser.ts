@@ -99,6 +99,7 @@ function parseZoneCommands(reader: TextReader, log: Logger): ZoneCommand[] {
 
   while (!reader.done) {
     const rawLine = reader.nextLine();
+    /* istanbul ignore if -- @preserve TextReader.done and nextLine() are coupled; this protects malformed reader state. */
     if (rawLine === undefined) break;
 
     const line = rawLine.trim();
@@ -136,6 +137,7 @@ function parseCommandLine(line: string, lineNum: number, log: Logger): ZoneComma
   const comment = commentParts.join("\t").trim() || undefined;
 
   const tokens = commandPart.trim().split(/\s+/);
+  /* istanbul ignore if -- @preserve split(/\s+/) on a command line always yields at least one token. */
   if (tokens.length < 1) return null;
 
   const command = tokens[0];

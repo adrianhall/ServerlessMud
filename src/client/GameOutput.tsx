@@ -11,6 +11,7 @@ function GameOutput({ connected, error, messages }: GameOutputProps) {
 
   useEffect(() => {
     const el = outputRef.current;
+    /* istanbul ignore else -- @preserve React supplies this ref after render; the null branch is only lifecycle defensiveness. */
     if (el) {
       el.scrollTop = el.scrollHeight;
     }

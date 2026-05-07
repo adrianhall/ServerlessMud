@@ -9,8 +9,33 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { createLogger } from "@lib/cloudflare-logging";
-import type { WebSocketAttachment } from "./types";
+import { ACTIVE_ZONE_ID, START_ROOM_VNUM } from "./game-constants";
+import type { Direction } from "./directions";
+import { oppositeDirection } from "./directions";
+import type { GameMessage, RoomInfo, WebSocketAttachment } from "./types";
 import { CommunicationHandler } from "./communication";
+
+interface ExitTargetRow {
+  targetRoom: number;
+}
+
+interface RoomZoneRow {
+  zoneId: number;
+}
+
+interface RoomRow {
+  vnum: number;
+  zoneId: number;
+  name: string;
+  description: string;
+}
+
+interface RoomExitRow {
+  direction: string;
+  description: string;
+  targetRoom: number;
+  doorType: number;
+}
 
 /**
  * A Durable Object that manages a single game zone, providing health status and (eventually)
@@ -50,10 +75,131 @@ export class ZoneProcessor extends DurableObject<Env> {
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [email]);
-    server.serializeAttachment({ email, sub, characterName } satisfies WebSocketAttachment);
+    server.serializeAttachment({
+      email,
+      sub,
+      characterName,
+      currentRoom: null
+    } satisfies WebSocketAttachment);
     this.comms.registerConnection(email, server);
+    await this.enterGame(email);
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Place a connected player into the starting room for this zone. */
+  async enterGame(userEmail: string): Promise<void> {
+    if (!this.comms.setCurrentRoom(userEmail, START_ROOM_VNUM)) return;
+
+    const message = this.makeEnterRoomMessage(userEmail, null, null, START_ROOM_VNUM);
+    this.comms.broadcastToRoom(START_ROOM_VNUM, userEmail, message, message);
+  }
+
+  /** Move a connected player through a visible exit in the current room. */
+  async moveRoom(userEmail: string, direction: Direction): Promise<void> {
+    const currentRoom = this.comms.getCurrentRoom(userEmail);
+    if (currentRoom === null) {
+      await this.enterGame(userEmail);
+      return;
+    }
+
+    const exit = await this.env.MAP.prepare(
+      `SELECT target_room AS targetRoom
+       FROM exits
+       WHERE room_vnum = ? AND direction = ? AND target_room >= 0`
+    )
+      .bind(currentRoom, direction)
+      .first<ExitTargetRow>();
+
+    if (!exit) {
+      this.sendPlayerText(userEmail, "You cannot go that way.");
+      return;
+    }
+
+    const targetRoom = exit.targetRoom;
+    const target = await this.env.MAP.prepare(
+      `SELECT zone_id AS zoneId
+       FROM rooms
+       WHERE vnum = ?`
+    )
+      .bind(targetRoom)
+      .first<RoomZoneRow>();
+
+    if (!target || target.zoneId !== ACTIVE_ZONE_ID) {
+      this.sendPlayerText(userEmail, "You cannot go that way yet.");
+      return;
+    }
+
+    if (this.comms.getCurrentRoom(userEmail) !== currentRoom) {
+      this.sendPlayerText(userEmail, "You are already moving.");
+      return;
+    }
+
+    const leaveMessage = this.makeLeaveRoomMessage(userEmail, direction, currentRoom, targetRoom);
+    this.comms.broadcastToRoom(currentRoom, userEmail, leaveMessage, leaveMessage);
+
+    this.comms.setCurrentRoom(userEmail, targetRoom);
+
+    const enterMessage = this.makeEnterRoomMessage(
+      userEmail,
+      oppositeDirection(direction),
+      currentRoom,
+      targetRoom
+    );
+    this.comms.broadcastToRoom(targetRoom, userEmail, enterMessage, enterMessage);
+  }
+
+  /** Return static room details plus connected players currently in that room. */
+  async getRoomInfo(userEmail: string, roomVnum: number): Promise<RoomInfo | null> {
+    if (this.comms.getCurrentRoom(userEmail) !== roomVnum) return null;
+
+    const room = await this.env.MAP.prepare(
+      `SELECT vnum, zone_id AS zoneId, name, description
+       FROM rooms
+       WHERE vnum = ?`
+    )
+      .bind(roomVnum)
+      .first<RoomRow>();
+
+    /* istanbul ignore if -- @preserve currentRoom is controlled by valid room transitions; this guards corrupted socket state. */
+    if (!room || room.zoneId !== ACTIVE_ZONE_ID) return null;
+
+    const exitsResult = await this.env.MAP.prepare(
+      `SELECT direction, description, target_room AS targetRoom, door_type AS doorType
+       FROM exits
+       WHERE room_vnum = ? AND target_room >= 0
+       ORDER BY CASE direction
+         WHEN 'NORTH' THEN 0
+         WHEN 'EAST' THEN 1
+         WHEN 'SOUTH' THEN 2
+         WHEN 'WEST' THEN 3
+         WHEN 'UP' THEN 4
+         WHEN 'DOWN' THEN 5
+         WHEN 'NORTHWEST' THEN 6
+         WHEN 'NORTHEAST' THEN 7
+         WHEN 'SOUTHEAST' THEN 8
+         WHEN 'SOUTHWEST' THEN 9
+         ELSE 10
+       END`
+    )
+      .bind(roomVnum)
+      .all<RoomExitRow>();
+
+    /* istanbul ignore next -- @preserve D1 .all() always provides results; fallback protects mocked runtimes. */
+    const exitRows = exitsResult.results ?? [];
+
+    return {
+      vnum: room.vnum,
+      name: room.name,
+      description: room.description,
+      exits: exitRows.map((exit) => ({
+        direction: exit.direction,
+        description: exit.description,
+        targetRoom: exit.targetRoom,
+        hasDoor: exit.doorType > 0
+      })),
+      players: this.comms.getPlayersInRoom(roomVnum, userEmail)
+    };
   }
 
   /**
@@ -66,11 +212,60 @@ export class ZoneProcessor extends DurableObject<Env> {
   async processInput(userEmail: string, text: string): Promise<void> {
     const characterName = this.comms.getCharacterName(userEmail) ?? userEmail;
     const sub = { name: characterName, email: userEmail };
-    this.comms.broadcast(
-      userEmail,
-      { type: "message", sub, details: { message: `You said '${text}'` } },
-      { type: "message", sub, details: { message: `${characterName} said '${text}'` } }
-    );
+    const currentRoom = this.comms.getCurrentRoom(userEmail);
+    const senderMessage = { type: "message", sub, details: { message: `You said '${text}'` } };
+    const othersMessage = {
+      type: "message",
+      sub,
+      details: { message: `${characterName} said '${text}'` }
+    };
+
+    if (currentRoom === null) {
+      this.comms.sendToPlayer(userEmail, senderMessage);
+    } else {
+      this.comms.broadcastToRoom(currentRoom, userEmail, senderMessage, othersMessage);
+    }
+  }
+
+  private makeLeaveRoomMessage(
+    userEmail: string,
+    direction: Direction,
+    oldRoomId: number,
+    newRoomId: number
+  ): GameMessage {
+    const sub = this.getPlayerSub(userEmail);
+    return {
+      type: "leave_room",
+      sub,
+      details: { player: sub.name, direction, oldRoomId, newRoomId }
+    };
+  }
+
+  private makeEnterRoomMessage(
+    userEmail: string,
+    direction: Direction | null,
+    oldRoomId: number | null,
+    newRoomId: number
+  ): GameMessage {
+    const sub = this.getPlayerSub(userEmail);
+    return {
+      type: "enter_room",
+      sub,
+      details: { player: sub.name, direction, oldRoomId, newRoomId }
+    };
+  }
+
+  private sendPlayerText(userEmail: string, message: string): void {
+    this.comms.sendToPlayer(userEmail, {
+      type: "message",
+      sub: this.getPlayerSub(userEmail),
+      details: { message }
+    });
+  }
+
+  private getPlayerSub(userEmail: string): { name: string; email: string } {
+    /* istanbul ignore next -- @preserve registered game sockets always include characterName; fallback protects malformed attachments. */
+    return { name: this.comms.getCharacterName(userEmail) ?? userEmail, email: userEmail };
   }
 
   /** Log unexpected client messages (input should arrive via POST). */

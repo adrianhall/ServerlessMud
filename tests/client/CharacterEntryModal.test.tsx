@@ -21,12 +21,20 @@ function character(name: string, lastUsed = "2026-01-01T00:00:00.000Z"): PlayerC
 
 function mockFetchForCharacters(characters: PlayerCharacter[] = []) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url =
+      typeof input === "string" ? input
+      : input instanceof URL ? input.href
+      : input.url;
     if (url.includes("/availability")) {
       const query = new URL(url, "https://example.com").searchParams.get("name") ?? "";
       if (query.toLowerCase() === "taken1") {
         return Promise.resolve(
-          jsonResponse({ available: false, valid: true, normalizedName: query, reason: "duplicate" })
+          jsonResponse({
+            available: false,
+            valid: true,
+            normalizedName: query,
+            reason: "duplicate"
+          })
         );
       }
       return Promise.resolve(
@@ -119,7 +127,10 @@ describe("CharacterEntryModal", () => {
 
   it("shows create API errors", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
       if (url.includes("/availability")) {
         return Promise.resolve(
           jsonResponse({ available: true, valid: true, normalizedName: "Dorian", reason: null })
@@ -165,5 +176,85 @@ describe("CharacterEntryModal", () => {
     render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
 
     expect(await screen.findByText("Character API responded with 500")).toBeInTheDocument();
+  });
+
+  it("shows Unknown error when character loading rejects with a non-Error value", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue("load failed");
+
+    render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
+
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
+  });
+
+  it("shows availability API non-ok errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
+      if (url.includes("/availability"))
+        return Promise.resolve(new Response(null, { status: 503 }));
+      return Promise.resolve(jsonResponse({ characters: [] }));
+    });
+
+    render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Dorian"), { target: { value: "dorian" } });
+
+    expect(await screen.findByText("Availability API responded with 503")).toBeInTheDocument();
+  });
+
+  it("shows Unknown error when availability rejects with a non-Error value", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
+      if (url.includes("/availability")) return Promise.reject("availability failed");
+      return Promise.resolve(jsonResponse({ characters: [] }));
+    });
+
+    render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Dorian"), { target: { value: "dorian" } });
+
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
+  });
+
+  it("ignores create submit while the form is incomplete", async () => {
+    const fetchSpy = mockFetchForCharacters();
+
+    render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
+
+    const form = (await screen.findByPlaceholderText("Dorian")).closest("form")!;
+    fireEvent.submit(form);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Unknown error when create rejects with a non-Error value", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init) => {
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
+      if (url.includes("/availability")) {
+        return Promise.resolve(
+          jsonResponse({ available: true, valid: true, normalizedName: "Dorian", reason: null })
+        );
+      }
+      if (init?.method === "POST") return Promise.reject("create failed");
+      return Promise.resolve(jsonResponse({ characters: [] }));
+    });
+
+    render(<CharacterEntryModal open onClose={vi.fn()} onEnterGame={vi.fn()} />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Dorian"), { target: { value: "dorian" } });
+    await screen.findByText("Name available: Dorian");
+    fireEvent.click(screen.getByRole("radio", { name: "Neutral" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
   });
 });

@@ -297,15 +297,43 @@ describe("developerAuthentication middleware", () => {
   // -----------------------------------------------------------------------
 
   describe("forwardWithHeaders (direct)", () => {
+    it("calls next when the JWT does not have three parts", async () => {
+      const app = new Hono();
+
+      app.get("/test", async (c) => {
+        let nextCalled = false;
+        await forwardWithHeaders(
+          c,
+          "not-a-jwt",
+          async () => {
+            nextCalled = true;
+          },
+          silentLogger
+        );
+        return c.json({ nextCalled });
+      });
+
+      const res = await app.request(`${BASE}/test`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { nextCalled: boolean };
+      expect(body.nextCalled).toBe(true);
+      expect(silentLogger.warn).toHaveBeenCalledWith("Malformed JWT in cookie – ignoring");
+    });
+
     it("calls next when the JWT payload is not valid base64", async () => {
       const app = new Hono();
 
       // Expose forwardWithHeaders behind a route so we get a Context.
       app.get("/test", async (c) => {
         let nextCalled = false;
-        await forwardWithHeaders(c, "aaa.not-valid-base64.ccc", async () => {
-          nextCalled = true;
-        }, silentLogger);
+        await forwardWithHeaders(
+          c,
+          "aaa.not-valid-base64.ccc",
+          async () => {
+            nextCalled = true;
+          },
+          silentLogger
+        );
         // If next() was called the response is controlled by us.
         return c.json({ nextCalled });
       });

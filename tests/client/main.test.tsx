@@ -3,9 +3,13 @@ import { waitFor } from "@testing-library/react";
 
 beforeEach(() => {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const body = url.includes("/api/me")
-      ? { email: "player@example.com", id: "user-123" }
+    const url =
+      typeof input === "string" ? input
+      : input instanceof URL ? input.href
+      : input.url;
+    const body =
+      url.includes("/api/me") ?
+        { email: "player@example.com", id: "user-123" }
       : { name: "ServerlessMud", version: "0.0.1" };
     return Promise.resolve(
       new Response(JSON.stringify(body), {
@@ -36,8 +40,6 @@ describe("main entry point", () => {
     document.body.innerHTML = "";
 
     vi.resetModules();
-    await expect(import("../../src/client/main")).rejects.toThrow(
-      "Root element #root not found"
-    );
+    await expect(import("../../src/client/main")).rejects.toThrow("Root element #root not found");
   });
 });

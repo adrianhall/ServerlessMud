@@ -9,6 +9,8 @@
 
 import { Hono } from "hono";
 import type { AuthVariables } from "@lib/cloudflare-auth";
+import { ACTIVE_ZONE_DO_NAME } from "./game-constants";
+import { parseMovementCommand } from "./directions";
 import type { GameInputPayload } from "./types";
 import {
   findCharacterForUser,
@@ -43,10 +45,10 @@ api.get("/me", (c) => {
  * GET /api/health
  *
  * Lightweight health-check endpoint.  Delegates to the ZoneProcessor
- * Durable Object instance named "demo".
+ * Durable Object instance for the active zone.
  */
 api.get("/health", async (c) => {
-  const stub = c.env.ZONE_PROCESSOR.getByName("demo");
+  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
   const health = await stub.getHealth();
   return c.json(health);
 });
@@ -78,7 +80,7 @@ api.get("/game/connect", async (c) => {
 
   await updateCharacterLastUsed(c.env.MAP, userEmail, character.name, new Date().toISOString());
 
-  const stub = c.env.ZONE_PROCESSOR.getByName("demo");
+  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
   const proxyRequest = new Request(c.req.url, {
     headers: {
       "Upgrade": "websocket",
@@ -89,6 +91,29 @@ api.get("/game/connect", async (c) => {
   });
 
   return stub.fetch(proxyRequest);
+});
+
+/**
+ * GET /api/game/rooms/:roomId
+ *
+ * Returns static room details and currently connected players for a room
+ * in the active zone.
+ */
+api.get("/game/rooms/:roomId", async (c) => {
+  const roomIdParam = c.req.param("roomId");
+  if (!/^\d+$/.test(roomIdParam)) {
+    return c.json({ error: "roomId must be a number" }, 400);
+  }
+
+  const roomId = Number(roomIdParam);
+  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
+  const room = await stub.getRoomInfo(c.get("userEmail"), roomId);
+
+  if (!room) {
+    return c.json({ error: "Room not found" }, 404);
+  }
+
+  return c.json(room);
 });
 
 /**
@@ -105,8 +130,14 @@ api.post("/game/input", async (c) => {
   }
 
   const userEmail = c.get("userEmail");
-  const stub = c.env.ZONE_PROCESSOR.getByName("demo");
-  await stub.processInput(userEmail, body.text);
+  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
+  const direction = parseMovementCommand(body.text);
+
+  if (direction) {
+    await stub.moveRoom(userEmail, direction);
+  } else {
+    await stub.processInput(userEmail, body.text);
+  }
 
   return c.json({ ok: true });
 });

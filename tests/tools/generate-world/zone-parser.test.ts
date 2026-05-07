@@ -138,6 +138,18 @@ describe("parseZoneFile", () => {
     expect(cmd.arg3).toBe(2); // state: closed+locked
   });
 
+  it("defaults missing fourth arguments on four-arg commands to -1", async () => {
+    const content = ["#1", "Builder~", "Zone~", "100 199 10 2 0", "M 0 3011 1", "S", "$"].join(
+      "\n"
+    );
+
+    const zone = await parseZoneFile(await writeZone(content), log);
+    const cmd = zone.commands[0];
+
+    expect(cmd.command).toBe("M");
+    expect(cmd.arg3).toBe(-1);
+  });
+
   it("skips comment lines starting with *", async () => {
     const content = [
       "#1",
@@ -200,16 +212,29 @@ describe("parseZoneFile", () => {
     expect(cmd.sarg2).toBe("hello world");
   });
 
-  it("handles V command with too few tokens", async () => {
+  it("parses V commands without a string value", async () => {
     const content = [
       "#1",
       "Builder~",
       "Zone~",
       "100 199 10 2 0",
-      "V 0 2 3000",
+      "V 0 2 3000 3001 0 myvar",
       "S",
       "$"
     ].join("\n");
+
+    const zone = await parseZoneFile(await writeZone(content), log);
+    const cmd = zone.commands[0];
+
+    expect(cmd.command).toBe("V");
+    expect(cmd.sarg1).toBe("myvar");
+    expect(cmd.sarg2).toBeUndefined();
+  });
+
+  it("handles V command with too few tokens", async () => {
+    const content = ["#1", "Builder~", "Zone~", "100 199 10 2 0", "V 0 2 3000", "S", "$"].join(
+      "\n"
+    );
 
     const zone = await parseZoneFile(await writeZone(content), log);
     expect(zone.commands).toHaveLength(0);
@@ -217,15 +242,7 @@ describe("parseZoneFile", () => {
   });
 
   it("handles command lines with too few tokens", async () => {
-    const content = [
-      "#1",
-      "Builder~",
-      "Zone~",
-      "100 199 10 2 0",
-      "M 0",
-      "S",
-      "$"
-    ].join("\n");
+    const content = ["#1", "Builder~", "Zone~", "100 199 10 2 0", "M 0", "S", "$"].join("\n");
 
     const zone = await parseZoneFile(await writeZone(content), log);
     expect(zone.commands).toHaveLength(0);
@@ -234,7 +251,9 @@ describe("parseZoneFile", () => {
 
   it("throws on missing zone header", async () => {
     const content = "not a zone header\n";
-    await expect(parseZoneFile(await writeZone(content), log)).rejects.toThrow("Expected zone header");
+    await expect(parseZoneFile(await writeZone(content), log)).rejects.toThrow(
+      "Expected zone header"
+    );
   });
 
   it("throws on missing data line", async () => {
@@ -250,14 +269,7 @@ describe("parseZoneFile", () => {
   });
 
   it("handles numeric zone flags", async () => {
-    const content = [
-      "#1",
-      "Builder~",
-      "Zone~",
-      "100 199 10 2 8 0 0 0 1 33",
-      "S",
-      "$"
-    ].join("\n");
+    const content = ["#1", "Builder~", "Zone~", "100 199 10 2 8 0 0 0 1 33", "S", "$"].join("\n");
 
     const zone = await parseZoneFile(await writeZone(content), log);
     expect(zone.flags_value).toBe(8);

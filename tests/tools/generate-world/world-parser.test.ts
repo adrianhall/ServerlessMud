@@ -247,6 +247,36 @@ describe("parseWorldFile", () => {
     expect(log.error).toHaveBeenCalledWith(expect.stringContaining("expected data line"));
   });
 
+  it("skips invalid room vnum headers", async () => {
+    const content = ["#not-a-number", "Bad Room~", "A room.~", "10 0 0 0 0 0", "S", "$~"].join(
+      "\n"
+    );
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms).toHaveLength(0);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Invalid room vnum"));
+  });
+
+  it("parses old-format room data lines with sector type in the third field", async () => {
+    const content = ["#100", "Old Room~", "A room.~", "10 0 2 0", "S", "$~"].join("\n");
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].sector_type_value).toBe(2);
+    expect(rooms[0].sector_type).toBe("FIELD");
+  });
+
+  it("parses a room that reaches EOF before the S marker", async () => {
+    const content = ["#100", "Room~", "Desc.~", "10 0 0 0 0 0"].join("\n");
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].name).toBe("Room");
+  });
+
   it("handles room with too few data fields", async () => {
     const content = ["#100", "Bad Room~", "A room.~", "10 0", "S", "$~"].join("\n");
 
@@ -295,15 +325,9 @@ describe("parseWorldFile", () => {
   });
 
   it("warns on unexpected lines within a room", async () => {
-    const content = [
-      "#100",
-      "Room~",
-      "Desc.~",
-      "10 0 0 0 0 0",
-      "X unexpected",
-      "S",
-      "$~"
-    ].join("\n");
+    const content = ["#100", "Room~", "Desc.~", "10 0 0 0 0 0", "X unexpected", "S", "$~"].join(
+      "\n"
+    );
 
     const rooms = await parseWorldFile(await writeWorld(content), log);
     expect(rooms).toHaveLength(1);
@@ -311,30 +335,53 @@ describe("parseWorldFile", () => {
   });
 
   it("handles triggers before S marker", async () => {
-    const content = [
-      "#100",
-      "Triggered Room~",
-      "Desc.~",
-      "10 0 0 0 0 0",
-      "T 5000",
-      "S",
-      "$~"
-    ].join("\n");
+    const content = ["#100", "Triggered Room~", "Desc.~", "10 0 0 0 0 0", "T 5000", "S", "$~"].join(
+      "\n"
+    );
 
     const rooms = await parseWorldFile(await writeWorld(content), log);
     expect(rooms[0].triggers).toHaveLength(1);
     expect(rooms[0].triggers[0].vnum).toBe(5000);
   });
 
-  it("handles file ending with just $", async () => {
+  it("ignores invalid triggers before S marker", async () => {
+    const content = ["#100", "Room~", "Desc.~", "10 0 0 0 0 0", "T nope", "S", "$~"].join("\n");
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms[0].triggers).toEqual([]);
+  });
+
+  it("ignores invalid triggers after S marker", async () => {
+    const content = ["#100", "Room~", "Desc.~", "10 0 0 0 0 0", "S", "T nope", "$~"].join("\n");
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms[0].triggers).toEqual([]);
+  });
+
+  it("parses extra descriptions with empty keyword lists", async () => {
     const content = [
       "#100",
       "Room~",
       "Desc.~",
       "10 0 0 0 0 0",
+      "E",
+      "~",
+      "An unkeyed description.~",
       "S",
-      "$"
+      "$~"
     ].join("\n");
+
+    const rooms = await parseWorldFile(await writeWorld(content), log);
+
+    expect(rooms[0].extra_descriptions).toEqual([
+      { keywords: [], description: "An unkeyed description." }
+    ]);
+  });
+
+  it("handles file ending with just $", async () => {
+    const content = ["#100", "Room~", "Desc.~", "10 0 0 0 0 0", "S", "$"].join("\n");
 
     const rooms = await parseWorldFile(await writeWorld(content), log);
     expect(rooms).toHaveLength(1);

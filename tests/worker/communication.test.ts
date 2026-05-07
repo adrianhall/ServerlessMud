@@ -28,13 +28,19 @@ const silentLogger: Logger = {
 // ---------------------------------------------------------------------------
 
 interface MockWebSocketOptions {
-  attachment?: (Omit<WebSocketAttachment, "characterName"> & { characterName?: string }) | null;
+  attachment?:
+    | (Pick<WebSocketAttachment, "email" | "sub"> & {
+        characterName?: string;
+        currentRoom?: number | null;
+      })
+    | null;
   readyState?: number;
   closeThrows?: boolean;
 }
 
 interface MockWebSocket {
   deserializeAttachment: () => WebSocketAttachment | null;
+  serializeAttachment: ReturnType<typeof vi.fn>;
   readyState: number;
   send: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
@@ -47,11 +53,20 @@ interface MockWebSocket {
  * exposing only the surface used by `CommunicationHandler`.
  */
 function makeMockWebSocket(opts: MockWebSocketOptions = {}): MockWebSocket {
-  const attachment = opts.attachment
-    ? ({ characterName: "Dorian", ...opts.attachment } satisfies WebSocketAttachment)
+  let attachment =
+    opts.attachment ?
+      ({
+        characterName: "Dorian",
+        currentRoom: null,
+        ...opts.attachment
+      } satisfies WebSocketAttachment)
     : null;
   const readyState = opts.readyState ?? WebSocket.OPEN;
   const sentMessages: string[] = [];
+
+  const serializeAttachment = vi.fn((nextAttachment: WebSocketAttachment) => {
+    attachment = nextAttachment;
+  });
 
   const send = vi.fn((data: string) => {
     sentMessages.push(data);
@@ -65,6 +80,7 @@ function makeMockWebSocket(opts: MockWebSocketOptions = {}): MockWebSocket {
 
   return {
     deserializeAttachment: () => attachment,
+    serializeAttachment,
     readyState,
     send,
     close,
@@ -152,8 +168,16 @@ describe("CommunicationHandler constructor", () => {
     // The last-registered socket should be the one that receives broadcasts.
     handler.broadcast(
       "alice@example.com",
-      { type: "message", sub: { name: "Alice", email: "alice@example.com" }, details: { message: "self" } },
-      { type: "message", sub: { name: "Alice", email: "alice@example.com" }, details: { message: "other" } }
+      {
+        type: "message",
+        sub: { name: "Alice", email: "alice@example.com" },
+        details: { message: "self" }
+      },
+      {
+        type: "message",
+        sub: { name: "Alice", email: "alice@example.com" },
+        details: { message: "other" }
+      }
     );
     expect(second.send).toHaveBeenCalledTimes(1);
     expect(first.send).not.toHaveBeenCalled();
@@ -278,9 +302,7 @@ describe("CommunicationHandler.handleMessage", () => {
       attachment: { email: "alice@example.com", sub: "sub-a" }
     });
 
-    expect(() =>
-      handler.handleMessage(ws as unknown as WebSocket, "hello")
-    ).not.toThrow();
+    expect(() => handler.handleMessage(ws as unknown as WebSocket, "hello")).not.toThrow();
   });
 
   it("logs ArrayBuffer (binary) messages without throwing", () => {
@@ -290,18 +312,14 @@ describe("CommunicationHandler.handleMessage", () => {
     });
     const binary = new ArrayBuffer(8);
 
-    expect(() =>
-      handler.handleMessage(ws as unknown as WebSocket, binary)
-    ).not.toThrow();
+    expect(() => handler.handleMessage(ws as unknown as WebSocket, binary)).not.toThrow();
   });
 
   it("falls back to 'unknown' email when the attachment is null", () => {
     const { handler } = makeHandler();
     const orphan = makeMockWebSocket({ attachment: null });
 
-    expect(() =>
-      handler.handleMessage(orphan as unknown as WebSocket, "hi")
-    ).not.toThrow();
+    expect(() => handler.handleMessage(orphan as unknown as WebSocket, "hi")).not.toThrow();
   });
 });
 
@@ -358,9 +376,7 @@ describe("CommunicationHandler.handleError", () => {
     handler.registerConnection("alice@example.com", ws as unknown as WebSocket);
 
     // Pass a non-Error value to exercise String(error) path.
-    expect(() =>
-      handler.handleError(ws as unknown as WebSocket, "string error")
-    ).not.toThrow();
+    expect(() => handler.handleError(ws as unknown as WebSocket, "string error")).not.toThrow();
   });
 });
 
@@ -426,6 +442,213 @@ describe("CommunicationHandler.broadcast", () => {
     expect(() =>
       handler.broadcast("nobody@example.com", senderMessage, othersMessage)
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Room state and room-scoped messaging
+// ---------------------------------------------------------------------------
+
+describe("CommunicationHandler room helpers", () => {
+  it("returns null for missing character names and rooms", () => {
+    const { handler } = makeHandler();
+    expect(handler.getCharacterName("missing@example.com")).toBeNull();
+    expect(handler.getCurrentRoom("missing@example.com")).toBeNull();
+  });
+
+  it("returns null when a connected socket has no attachment", () => {
+    const { handler } = makeHandler();
+    const orphan = makeMockWebSocket({ attachment: null });
+    handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
+
+    expect(handler.getCharacterName("orphan@example.com")).toBeNull();
+    expect(handler.getCurrentRoom("orphan@example.com")).toBeNull();
+  });
+
+  it("updates and reads the current room from the WebSocket attachment", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: { email: "alice@example.com", sub: "sub-a" }
+    });
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+
+    expect(handler.getCurrentRoom("alice@example.com")).toBeNull();
+    expect(handler.setCurrentRoom("alice@example.com", 3001)).toBe(true);
+
+    expect(alice.serializeAttachment).toHaveBeenCalledWith({
+      email: "alice@example.com",
+      sub: "sub-a",
+      characterName: "Dorian",
+      currentRoom: 3001
+    });
+    expect(handler.getCurrentRoom("alice@example.com")).toBe(3001);
+  });
+
+  it("returns false when setting the room for a missing connection", () => {
+    const { handler } = makeHandler();
+    expect(handler.setCurrentRoom("missing@example.com", 3001)).toBe(false);
+  });
+
+  it("returns false when setting the room on a socket without an attachment", () => {
+    const { handler } = makeHandler();
+    const orphan = makeMockWebSocket({ attachment: null });
+    handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
+
+    expect(handler.setCurrentRoom("orphan@example.com", 3001)).toBe(false);
+  });
+
+  it("lists player names in a room and can exclude one email", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: {
+        email: "alice@example.com",
+        sub: "sub-a",
+        characterName: "Alice",
+        currentRoom: 3001
+      }
+    });
+    const bob = makeMockWebSocket({
+      attachment: {
+        email: "bob@example.com",
+        sub: "sub-b",
+        characterName: "Bob",
+        currentRoom: 3001
+      }
+    });
+    const cara = makeMockWebSocket({
+      attachment: {
+        email: "cara@example.com",
+        sub: "sub-c",
+        characterName: "Cara",
+        currentRoom: 3054
+      }
+    });
+
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+    handler.registerConnection("bob@example.com", bob as unknown as WebSocket);
+    handler.registerConnection("cara@example.com", cara as unknown as WebSocket);
+
+    expect(handler.getPlayersInRoom(3001)).toEqual(["Alice", "Bob"]);
+    expect(handler.getPlayersInRoom(3001, "alice@example.com")).toEqual(["Bob"]);
+  });
+
+  it("sends a message to one open socket", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: { email: "alice@example.com", sub: "sub-a" }
+    });
+    const message: GameMessage = {
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "hello" }
+    };
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+
+    expect(handler.sendToPlayer("alice@example.com", message)).toBe(true);
+    expect(alice.sentMessages).toEqual([JSON.stringify(message)]);
+  });
+
+  it("does not send direct messages to missing or closed sockets", () => {
+    const { handler } = makeHandler();
+    const closed = makeMockWebSocket({
+      attachment: { email: "closed@example.com", sub: "sub-c" },
+      readyState: WebSocket.CLOSED
+    });
+    const message: GameMessage = {
+      type: "message",
+      sub: { name: "Closed", email: "closed@example.com" },
+      details: { message: "hello" }
+    };
+    handler.registerConnection("closed@example.com", closed as unknown as WebSocket);
+
+    expect(handler.sendToPlayer("missing@example.com", message)).toBe(false);
+    expect(handler.sendToPlayer("closed@example.com", message)).toBe(false);
+    expect(closed.sentMessages).toEqual([]);
+  });
+
+  it("broadcastToRoom sends only to players in the target room", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: {
+        email: "alice@example.com",
+        sub: "sub-a",
+        characterName: "Alice",
+        currentRoom: 3001
+      }
+    });
+    const bob = makeMockWebSocket({
+      attachment: {
+        email: "bob@example.com",
+        sub: "sub-b",
+        characterName: "Bob",
+        currentRoom: 3001
+      }
+    });
+    const cara = makeMockWebSocket({
+      attachment: {
+        email: "cara@example.com",
+        sub: "sub-c",
+        characterName: "Cara",
+        currentRoom: 3054
+      }
+    });
+    const senderMessage: GameMessage = {
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { direction: "NORTH" }
+    };
+    const othersMessage: GameMessage = {
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { direction: "NORTH" }
+    };
+
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+    handler.registerConnection("bob@example.com", bob as unknown as WebSocket);
+    handler.registerConnection("cara@example.com", cara as unknown as WebSocket);
+
+    handler.broadcastToRoom(3001, "alice@example.com", senderMessage, othersMessage);
+
+    expect(alice.sentMessages).toEqual([JSON.stringify(senderMessage)]);
+    expect(bob.sentMessages).toEqual([JSON.stringify(othersMessage)]);
+    expect(cara.sentMessages).toEqual([]);
+  });
+
+  it("broadcastToRoom skips closed sockets and sockets without attachments", () => {
+    const { handler } = makeHandler();
+    const open = makeMockWebSocket({
+      attachment: {
+        email: "open@example.com",
+        sub: "sub-o",
+        characterName: "Open",
+        currentRoom: 3001
+      }
+    });
+    const closed = makeMockWebSocket({
+      attachment: {
+        email: "closed@example.com",
+        sub: "sub-c",
+        characterName: "Closed",
+        currentRoom: 3001
+      },
+      readyState: WebSocket.CLOSED
+    });
+    const orphan = makeMockWebSocket({ attachment: null });
+    const message: GameMessage = {
+      type: "enter_room",
+      sub: { name: "Open", email: "open@example.com" },
+      details: { direction: null }
+    };
+
+    handler.registerConnection("open@example.com", open as unknown as WebSocket);
+    handler.registerConnection("closed@example.com", closed as unknown as WebSocket);
+    handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
+
+    handler.broadcastToRoom(3001, "open@example.com", message, message);
+
+    expect(open.sentMessages).toEqual([JSON.stringify(message)]);
+    expect(closed.sentMessages).toEqual([]);
+    expect(orphan.sentMessages).toEqual([]);
   });
 });
 

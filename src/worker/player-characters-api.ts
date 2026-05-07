@@ -70,6 +70,7 @@ async function getCharacterCountForUser(map: D1Database, userEmail: string): Pro
     .prepare("SELECT COUNT(*) AS count FROM playerCharacters WHERE userEmail = ?")
     .bind(userEmail)
     .first<{ count: number }>();
+  /* istanbul ignore next -- @preserve SELECT COUNT(*) always returns one row; fallback protects mocked D1 behavior. */
   return result?.count ?? 0;
 }
 

@@ -77,12 +77,7 @@ describe("decodeBitvector", () => {
 
   it("decodes multiple bits", () => {
     // 156 = 128 + 16 + 8 + 4 = bits 7,4,3,2 = NO_MAGIC, PEACEFUL, INDOORS, NO_MOB
-    expect(decodeBitvector(156, ROOM_FLAGS)).toEqual([
-      "NO_MOB",
-      "INDOORS",
-      "PEACEFUL",
-      "NO_MAGIC"
-    ]);
+    expect(decodeBitvector(156, ROOM_FLAGS)).toEqual(["NO_MOB", "INDOORS", "PEACEFUL", "NO_MAGIC"]);
   });
 
   it("decodes zone flags", () => {

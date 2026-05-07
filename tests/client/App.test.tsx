@@ -20,7 +20,10 @@ const CHARACTER_RESPONSE = {
 
 beforeEach(() => {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url =
+      typeof input === "string" ? input
+      : input instanceof URL ? input.href
+      : input.url;
     if (url.includes("/api/me")) return Promise.resolve(jsonResponse(USER_RESPONSE));
     if (url.includes("/api/player-characters")) {
       return Promise.resolve(jsonResponse({ characters: [CHARACTER_RESPONSE] }));
@@ -57,7 +60,10 @@ describe("App", () => {
 
   it("shows error when version API responds with non-ok status", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
       if (url.includes("/api/me")) return Promise.resolve(jsonResponse(USER_RESPONSE));
       return Promise.resolve(new Response(null, { status: 500 }));
     });
@@ -68,7 +74,10 @@ describe("App", () => {
 
   it("shows error when user API responds with non-ok status", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
       if (url.includes("/api/me")) return Promise.resolve(new Response(null, { status: 403 }));
       return Promise.resolve(jsonResponse(VERSION_RESPONSE));
     });
@@ -104,9 +113,22 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Enter the game" })).toBeInTheDocument();
   });
 
+  it("closes the character modal from the app-level close handler", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enter the game" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("opens create-character mode automatically for a new user", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
       if (url.includes("/api/me")) return Promise.resolve(jsonResponse(USER_RESPONSE));
       if (url.includes("/api/player-characters")) {
         return Promise.resolve(jsonResponse({ characters: [] }));

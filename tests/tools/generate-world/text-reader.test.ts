@@ -38,6 +38,12 @@ describe("TextReader", () => {
     expect(reader.peekLine()).toBe("second");
   });
 
+  it("returns undefined when peeking at EOF", () => {
+    const reader = new TextReader("only", "test.txt", makeLog());
+    expect(reader.nextLine()).toBe("only");
+    expect(reader.peekLine()).toBeUndefined();
+  });
+
   it("reports remaining line count", () => {
     const reader = new TextReader("a\nb\nc", "test.txt", makeLog());
     expect(reader.remaining).toBe(3);
@@ -147,6 +153,10 @@ describe("asciiFlagConv", () => {
     expect(asciiFlagConv("ab")).toBe(3);
     // ace = bit 0 + bit 2 + bit 4 = 1 + 4 + 16 = 21
     expect(asciiFlagConv("ace")).toBe(21);
+  });
+
+  it("ignores non-letter characters in ASCII flag strings", () => {
+    expect(asciiFlagConv("a!")).toBe(1);
   });
 
   it("handles the zone flags example: d = GRID (bit 3) = 8", () => {

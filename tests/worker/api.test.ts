@@ -18,6 +18,23 @@ async function createCharacter(email: string, name: string, gender = "Male") {
   });
 }
 
+async function connectCharacter(email: string, characterName: string) {
+  const response = await SELF.fetch(
+    `https://example.com/api/game/connect?characterName=${encodeURIComponent(characterName)}`,
+    {
+      headers: {
+        ...(await authHeaders(email)),
+        Upgrade: "websocket"
+      }
+    }
+  );
+
+  expect(response.status).toBe(101);
+  const ws = response.webSocket!;
+  ws.accept();
+  return ws;
+}
+
 async function ensurePlayerCharactersTable() {
   await env.MAP.batch([
     env.MAP.prepare(
@@ -39,9 +56,68 @@ async function ensurePlayerCharactersTable() {
   ]);
 }
 
+async function ensureZone30WorldData() {
+  await env.MAP.batch([
+    env.MAP.prepare(
+      `CREATE TABLE IF NOT EXISTS zones (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        builder TEXT NOT NULL DEFAULT '',
+        min_vnum INTEGER NOT NULL,
+        max_vnum INTEGER NOT NULL,
+        lifespan INTEGER NOT NULL,
+        reset_mode INTEGER NOT NULL,
+        flags INTEGER NOT NULL DEFAULT 0
+      )`
+    ),
+    env.MAP.prepare(
+      `CREATE TABLE IF NOT EXISTS rooms (
+        vnum INTEGER PRIMARY KEY,
+        zone_id INTEGER NOT NULL REFERENCES zones(id),
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        flags INTEGER NOT NULL DEFAULT 0,
+        sector_type INTEGER NOT NULL DEFAULT 0
+      )`
+    ),
+    env.MAP.prepare(
+      `CREATE TABLE IF NOT EXISTS exits (
+        room_vnum INTEGER NOT NULL REFERENCES rooms(vnum),
+        direction TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        keywords TEXT NOT NULL DEFAULT '[]',
+        door_type INTEGER NOT NULL DEFAULT 0,
+        key_vnum INTEGER NOT NULL DEFAULT -1,
+        target_room INTEGER NOT NULL DEFAULT -1,
+        PRIMARY KEY (room_vnum, direction)
+      )`
+    )
+  ]);
+
+  await env.MAP.batch([
+    env.MAP.prepare(
+      `INSERT OR IGNORE INTO zones (id, name, builder, min_vnum, max_vnum, lifespan, reset_mode, flags)
+       VALUES (30, 'Northern Midgaard', 'Test', 3000, 3099, 15, 2, 8)`
+    ),
+    env.MAP.prepare(
+      `INSERT OR IGNORE INTO rooms (vnum, zone_id, name, description, flags, sector_type)
+       VALUES (3001, 30, 'The Temple Of Midgaard', 'The starting room.', 0, 0)`
+    ),
+    env.MAP.prepare(
+      `INSERT OR IGNORE INTO rooms (vnum, zone_id, name, description, flags, sector_type)
+       VALUES (3054, 30, 'The Altar', 'The northern room.', 0, 0)`
+    ),
+    env.MAP.prepare(
+      `INSERT OR IGNORE INTO exits (room_vnum, direction, description, keywords, door_type, key_vnum, target_room)
+       VALUES (3001, 'NORTH', 'A northern exit.', '[]', 0, -1, 3054)`
+    )
+  ]);
+}
+
 describe("API routes", () => {
   beforeEach(async () => {
     await ensurePlayerCharactersTable();
+    await ensureZone30WorldData();
     await env.MAP.prepare("DELETE FROM playerCharacters").run();
   });
 
@@ -97,6 +173,69 @@ describe("API routes", () => {
     expect(data).toEqual({ ok: true });
   });
 
+  it("POST /api/game/input accepts movement commands", async () => {
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        ...(await authHeaders("test@example.com")),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: "go north" })
+    });
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { ok: boolean };
+    expect(data).toEqual({ ok: true });
+  });
+
+  it("GET /api/game/rooms/:roomId returns room details", async () => {
+    await createCharacter("test@example.com", "roomie");
+    const ws = await connectCharacter("test@example.com", "Roomie");
+
+    const response = await SELF.fetch("https://example.com/api/game/rooms/3001", {
+      headers: await authHeaders("test@example.com")
+    });
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as {
+      vnum: number;
+      name: string;
+      exits: Array<{ direction: string; targetRoom: number }>;
+      players: string[];
+    };
+    expect(data.vnum).toBe(3001);
+    expect(data.name).toEqual(expect.any(String));
+    expect(data.exits.some((exit) => exit.direction === "NORTH" && exit.targetRoom === 3054)).toBe(
+      true
+    );
+    expect(data.players).toEqual([]);
+
+    ws.close(1000, "done");
+  });
+
+  it("GET /api/game/rooms/:roomId validates the room id", async () => {
+    const response = await SELF.fetch("https://example.com/api/game/rooms/not-a-number", {
+      headers: await authHeaders("test@example.com")
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("GET /api/game/rooms/:roomId returns 404 for missing rooms", async () => {
+    await createCharacter("test@example.com", "roomie");
+    const ws = await connectCharacter("test@example.com", "Roomie");
+
+    const response = await SELF.fetch("https://example.com/api/game/rooms/999999", {
+      headers: await authHeaders("test@example.com")
+    });
+
+    expect(response.status).toBe(404);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("Room not found");
+
+    ws.close(1000, "done");
+  });
+
   it("POST /api/game/input returns 400 with missing text", async () => {
     const response = await SELF.fetch("https://example.com/api/game/input", {
       method: "POST",
@@ -135,7 +274,7 @@ describe("API routes", () => {
     const response = await SELF.fetch("https://example.com/api/game/connect", {
       headers: {
         ...(await authHeaders("test@example.com")),
-        "Upgrade": "websocket"
+        Upgrade: "websocket"
       }
     });
 
@@ -147,15 +286,12 @@ describe("API routes", () => {
   it("GET /api/game/connect rejects characters owned by another user", async () => {
     await createCharacter("owner@example.com", "owned1");
 
-    const response = await SELF.fetch(
-      "https://example.com/api/game/connect?characterName=Owned1",
-      {
-        headers: {
-          ...(await authHeaders("other@example.com")),
-          "Upgrade": "websocket"
-        }
+    const response = await SELF.fetch("https://example.com/api/game/connect?characterName=Owned1", {
+      headers: {
+        ...(await authHeaders("other@example.com")),
+        Upgrade: "websocket"
       }
-    );
+    });
 
     expect(response.status).toBe(404);
     const data = (await response.json()) as { error: string };
@@ -173,7 +309,7 @@ describe("API routes", () => {
     const response = await SELF.fetch("https://example.com/api/game/connect?characterName=alice1", {
       headers: {
         ...(await authHeaders("alice@example.com")),
-        "Upgrade": "websocket"
+        Upgrade: "websocket"
       }
     });
 
@@ -222,6 +358,16 @@ describe("API routes", () => {
       "https://example.com/api/player-characters/availability?name=ab",
       { headers: await authHeaders("test@example.com") }
     );
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { available: boolean; valid: boolean; reason: string };
+    expect(data).toMatchObject({ available: false, valid: false, reason: "invalid_format" });
+  });
+
+  it("GET /api/player-characters/availability validates missing names", async () => {
+    const response = await SELF.fetch("https://example.com/api/player-characters/availability", {
+      headers: await authHeaders("test@example.com")
+    });
 
     expect(response.status).toBe(200);
     const data = (await response.json()) as { available: boolean; valid: boolean; reason: string };

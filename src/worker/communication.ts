@@ -125,6 +125,41 @@ export class CommunicationHandler {
     return attachment?.characterName ?? null;
   }
 
+  /** Look up the current room for a connected user. */
+  getCurrentRoom(email: string): number | null {
+    const ws = this.connections.get(email);
+    if (!ws) return null;
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    return attachment?.currentRoom ?? null;
+  }
+
+  /** Update the room stored on a user's WebSocket attachment. */
+  setCurrentRoom(email: string, roomVnum: number): boolean {
+    const ws = this.connections.get(email);
+    if (!ws) return false;
+
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    if (!attachment) return false;
+
+    ws.serializeAttachment({ ...attachment, currentRoom: roomVnum } satisfies WebSocketAttachment);
+    return true;
+  }
+
+  /** Names of connected players in a room, excluding one user when requested. */
+  getPlayersInRoom(roomVnum: number, excludeEmail?: string): string[] {
+    const players: string[] = [];
+
+    for (const [email, ws] of this.connections) {
+      if (excludeEmail && email === excludeEmail) continue;
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+      if (attachment?.currentRoom === roomVnum) {
+        players.push(attachment.characterName);
+      }
+    }
+
+    return players;
+  }
+
   // -------------------------------------------------------------------
   // Messaging
   // -------------------------------------------------------------------
@@ -143,6 +178,38 @@ export class CommunicationHandler {
       sent++;
     }
     this.log.debug("broadcast complete", { senderEmail, sent });
+  }
+
+  /** Send a message to one connected user, if the socket is open. */
+  sendToPlayer(email: string, message: GameMessage): boolean {
+    const ws = this.connections.get(email);
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+    ws.send(JSON.stringify(message));
+    return true;
+  }
+
+  /** Broadcast to players currently in one room only. */
+  broadcastToRoom(
+    roomVnum: number,
+    senderEmail: string,
+    senderMessage: GameMessage,
+    othersMessage: GameMessage
+  ): void {
+    let sent = 0;
+
+    for (const [email, ws] of this.connections) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+      if (attachment?.currentRoom !== roomVnum) continue;
+
+      const payload = JSON.stringify(email === senderEmail ? senderMessage : othersMessage);
+      ws.send(payload);
+      sent++;
+    }
+
+    this.log.debug("room broadcast complete", { roomVnum, senderEmail, sent });
   }
 
   // -------------------------------------------------------------------

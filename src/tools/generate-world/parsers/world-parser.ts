@@ -36,6 +36,7 @@ export async function parseWorldFile(filePath: string, log: Logger): Promise<Roo
 
   while (!reader.done) {
     const line = reader.peekLine();
+    /* istanbul ignore if -- @preserve TextReader.done and peekLine() are coupled; this protects malformed reader state. */
     if (line === undefined) break;
 
     const trimmed = line.trim();
@@ -104,6 +105,7 @@ function parseRoom(vnum: number, reader: TextReader, log: Logger): Room | null {
   // --- Parse optional sections until S (end of room) ---
   while (!reader.done) {
     const next = reader.peekLine();
+    /* istanbul ignore if -- @preserve TextReader.done and peekLine() are coupled; this protects malformed reader state. */
     if (next === undefined) break;
 
     const trimmedNext = next.trim();
@@ -133,6 +135,7 @@ function parseRoom(vnum: number, reader: TextReader, log: Logger): Room | null {
     if (trimmedNext === "E") {
       reader.nextLine(); // consume E line
       const extra = parseExtraDescription(vnum, reader, log);
+      /* istanbul ignore else -- @preserve parseExtraDescription currently always returns an object; null is future-proofing. */
       if (extra) {
         extraDescriptions.push(extra);
       }
@@ -266,6 +269,7 @@ function parseTriggerAttachments(
 ): void {
   while (!reader.done) {
     const next = reader.peekLine();
+    /* istanbul ignore if -- @preserve TextReader.done and peekLine() are coupled; this protects malformed reader state. */
     if (next === undefined) break;
 
     const trimmed = next.trim();
