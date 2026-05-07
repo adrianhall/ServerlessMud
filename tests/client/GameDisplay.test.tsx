@@ -144,6 +144,27 @@ describe("GameDisplay", () => {
     });
   });
 
+  it("renders server error messages in red", async () => {
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "error",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: { message: "Huh?" }
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Huh?")).toHaveClass("error");
+    });
+  });
+
   it("renders non-JSON WebSocket messages as raw text", async () => {
     renderGameDisplay();
 
@@ -534,6 +555,31 @@ describe("GameDisplay", () => {
     });
 
     // Input should be cleared after submit.
+    expect(input).toHaveValue("");
+  });
+
+  it("intercepts help locally and does not POST", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText("Enter command...");
+    fireEvent.change(input, { target: { value: "help" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Commands:/)).toHaveClass("help");
+      expect(screen.getByText(/say <message>/)).toBeInTheDocument();
+      expect(screen.getByText(/tell <player> <message>/)).toBeInTheDocument();
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(input).toHaveValue("");
   });
 

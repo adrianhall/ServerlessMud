@@ -431,6 +431,14 @@ button:disabled {
   word-break: break-word;
 }
 
+.game-message.error {
+  color: var(--error);
+}
+
+.game-message.help {
+  color: var(--terminal-accent);
+}
+
 .game-input-form {
   display: flex;
   align-items: center;

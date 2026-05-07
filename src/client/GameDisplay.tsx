@@ -10,6 +10,11 @@ interface GameMessage {
   details: Record<string, unknown>;
 }
 
+interface OutputMessage {
+  text: string;
+  tone?: "error" | "help";
+}
+
 interface RoomInfo {
   vnum: number;
   name: string;
@@ -25,9 +30,20 @@ interface GameDisplayProps {
   onExitGame: () => void;
 }
 
+const HELP_TEXT = [
+  "Commands:",
+  "  Movement: north, south, east, west, up, down, northwest, northeast, southeast, southwest",
+  "  Movement aliases: n, s, e, w, u, d, nw, ne, se, sw",
+  "  go <direction> - move in a direction",
+  "  say <message> - speak to everyone in your room",
+  "  shout <message> - broadcast to everyone in the zone",
+  "  tell <player> <message> - send a private message to a player in the zone",
+  "  help - show this command list"
+].join("\n");
+
 /** Game terminal with WebSocket connection and command input. */
 function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<OutputMessage[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +57,7 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
     const currentUserEmail = user?.email ?? character.userEmail;
     let active = true;
 
-    const appendMessage = (message: string) => {
+    const appendMessage = (message: OutputMessage) => {
       if (active) {
         setMessages((prev) => [...prev, message]);
       }
@@ -55,24 +71,24 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
         if (sequence !== roomLoadSequence.current) return;
 
         if (!res.ok) {
-          appendMessage(`[error] Room lookup failed with ${res.status}`);
+          appendMessage({ text: `[error] Room lookup failed with ${res.status}`, tone: "error" });
           return;
         }
 
         const room = (await res.json()) as RoomInfo;
         if (sequence !== roomLoadSequence.current) return;
-        appendMessage(formatRoomInfo(room));
+        appendMessage({ text: formatRoomInfo(room) });
       } catch (err: unknown) {
         if (sequence !== roomLoadSequence.current) return;
         const msg = err instanceof Error ? err.message : "Unknown error";
-        appendMessage(`[error] ${msg}`);
+        appendMessage({ text: `[error] ${msg}`, tone: "error" });
       }
     };
 
     const handleServerMessage = async (raw: string) => {
       const message = parseGameMessage(raw);
       if (!message) {
-        appendMessage(raw);
+        appendMessage({ text: raw });
         return;
       }
 
@@ -116,6 +132,11 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
 
     setInput("");
 
+    if (trimmed.toLowerCase() === "help") {
+      setMessages((prev) => [...prev, { text: HELP_TEXT, tone: "help" }]);
+      return;
+    }
+
     try {
       const res = await fetch("/api/game/input", {
         method: "POST",
@@ -123,11 +144,14 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
         body: JSON.stringify({ text: trimmed })
       });
       if (!res.ok) {
-        setMessages((prev) => [...prev, `[error] Server responded with ${res.status}`]);
+        setMessages((prev) => [
+          ...prev,
+          { text: `[error] Server responded with ${res.status}`, tone: "error" }
+        ]);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      setMessages((prev) => [...prev, `[error] ${msg}`]);
+      setMessages((prev) => [...prev, { text: `[error] ${msg}`, tone: "error" }]);
     }
   }
 
@@ -160,31 +184,44 @@ function parseGameMessage(raw: string): GameMessage | null {
   }
 }
 
-function formatGameMessage(message: GameMessage, currentUserEmail: string): string {
+function formatGameMessage(message: GameMessage, currentUserEmail: string): OutputMessage {
   const isSelf = message.sub.email === currentUserEmail;
 
   if (message.type === "message") {
     const text = message.details.message;
-    return typeof text === "string" ? text : JSON.stringify(message.details);
+    return { text: typeof text === "string" ? text : JSON.stringify(message.details) };
+  }
+
+  if (message.type === "error") {
+    const text = message.details.message;
+    return {
+      text: typeof text === "string" ? text : JSON.stringify(message.details),
+      tone: "error"
+    };
   }
 
   if (message.type === "leave_room") {
     const direction = getStringDetail(message.details, "direction") ?? "somewhere";
-    return isSelf ? `You depart ${direction}` : `${message.sub.name} departs ${direction}`;
+    return {
+      text: isSelf ? `You depart ${direction}` : `${message.sub.name} departs ${direction}`
+    };
   }
 
   if (message.type === "enter_room") {
     const direction = getStringDetail(message.details, "direction");
     if (!direction) {
-      return isSelf ? "You enter the game." : `${message.sub.name} enters the game.`;
+      return { text: isSelf ? "You enter the game." : `${message.sub.name} enters the game.` };
     }
 
-    return isSelf ?
-        `You enter from the ${direction}`
-      : `${message.sub.name} enters from the ${direction}`;
+    return {
+      text:
+        isSelf ?
+          `You enter from the ${direction}`
+        : `${message.sub.name} enters from the ${direction}`
+    };
   }
 
-  return JSON.stringify(message);
+  return { text: JSON.stringify(message) };
 }
 
 function formatRoomInfo(room: RoomInfo): string {

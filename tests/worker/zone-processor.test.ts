@@ -167,8 +167,8 @@ describe("ZoneProcessor", () => {
     await expect(stub.processInput("nobody@example.com", "hello")).resolves.toBeUndefined();
   });
 
-  it("processInput broadcasts to connected WebSocket", async () => {
-    const stub = env.ZONE_PROCESSOR.getByName("ws-broadcast");
+  it("processInput sends an error for unknown commands", async () => {
+    const stub = env.ZONE_PROCESSOR.getByName("ws-unknown-command");
     const response = await connectWebSocket(stub, "alice@example.com");
     const ws = response.webSocket!;
     ws.accept();
@@ -183,22 +183,21 @@ describe("ZoneProcessor", () => {
 
     await stub.processInput("alice@example.com", "look");
 
-    // Give the event loop a tick for the message to arrive.
     await waitForWebSocketDelivery();
 
     expect(messages).toHaveLength(1);
     const parsed = JSON.parse(messages[0]);
     expect(parsed).toEqual({
-      type: "message",
+      type: "error",
       sub: { name: "Dorian", email: "alice@example.com" },
-      details: { message: "You said 'look'" }
+      details: { message: "I didn't understand that." }
     });
 
     ws.close(1000, "test done");
   });
 
-  it("broadcast sends different messages to sender vs others", async () => {
-    const stub = env.ZONE_PROCESSOR.getByName("ws-broadcast-multi");
+  it("say sends different room messages to sender vs others", async () => {
+    const stub = env.ZONE_PROCESSOR.getByName("ws-say");
 
     const res1 = await connectWebSocket(stub, "alice@example.com");
     const ws1 = res1.webSocket!;
@@ -221,22 +220,61 @@ describe("ZoneProcessor", () => {
     aliceMessages.length = 0;
     bobMessages.length = 0;
 
-    await stub.processInput("alice@example.com", "wave");
+    await stub.processInput("alice@example.com", "say hello");
     await waitForWebSocketDelivery();
 
     expect(aliceMessages).toHaveLength(1);
-    expect(JSON.parse(aliceMessages[0]).details.message).toBe("You said 'wave'");
+    expect(JSON.parse(aliceMessages[0]).details.message).toBe('You say, "hello"');
 
     expect(bobMessages).toHaveLength(1);
     const bobParsed = JSON.parse(bobMessages[0]);
-    expect(bobParsed.details.message).toBe("Dorian said 'wave'");
+    expect(bobParsed.details.message).toBe('Dorian says, "hello"');
     expect(bobParsed.sub).toEqual({ name: "Dorian", email: "alice@example.com" });
 
     ws1.close(1000, "done");
     ws2.close(1000, "done");
   });
 
-  it("processInput broadcasts only within the sender's current room", async () => {
+  it("shout broadcasts zone-wide", async () => {
+    const stub = env.ZONE_PROCESSOR.getByName("ws-shout-multi");
+
+    const res1 = await connectWebSocket(stub, "alice@example.com");
+    const ws1 = res1.webSocket!;
+    ws1.accept();
+
+    const res2 = await connectWebSocket(stub, "bob@example.com");
+    const ws2 = res2.webSocket!;
+    ws2.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    ws1.addEventListener("message", (e) => {
+      aliceMessages.push(e.data as string);
+    });
+    ws2.addEventListener("message", (e) => {
+      bobMessages.push(e.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+
+    await stub.processInput("alice@example.com", "shout wave");
+    await waitForWebSocketDelivery();
+
+    expect(aliceMessages).toHaveLength(1);
+    expect(JSON.parse(aliceMessages[0]).details.message).toBe('You shout, "wave"');
+
+    expect(bobMessages).toHaveLength(1);
+    const bobParsed = JSON.parse(bobMessages[0]);
+    expect(bobParsed.details.message).toBe('Dorian shouts, "wave"');
+    expect(bobParsed.sub).toEqual({ name: "Dorian", email: "alice@example.com" });
+
+    ws1.close(1000, "done");
+    ws2.close(1000, "done");
+  });
+
+  it("say broadcasts only within the sender's current room", async () => {
     await ensureZone30WorldData();
     const stub = env.ZONE_PROCESSOR.getByName("ws-room-chat");
 
@@ -266,18 +304,152 @@ describe("ZoneProcessor", () => {
     aliceMessages.length = 0;
     bobMessages.length = 0;
 
-    await stub.processInput("alice@example.com", "hello");
+    await stub.processInput("alice@example.com", "say hello");
     await waitForWebSocketDelivery();
 
     expect(parseMessages(aliceMessages)).toContainEqual({
       type: "message",
       sub: { name: "Alice", email: "alice@example.com" },
-      details: { message: "You said 'hello'" }
+      details: { message: 'You say, "hello"' }
     });
     expect(bobMessages).toEqual([]);
 
     aliceWs.close(1000, "done");
     bobWs.close(1000, "done");
+  });
+
+  it("shout broadcasts to players in other rooms in the zone", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-zone-shout");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    aliceWs.addEventListener("message", (event) => {
+      aliceMessages.push(event.data as string);
+    });
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+
+    await stub.moveRoom("alice@example.com", "NORTH");
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+
+    await stub.processInput("alice@example.com", "shout hello down there");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: 'You shout, "hello down there"' }
+    });
+    expect(parseMessages(bobMessages)).toContainEqual({
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: 'Alice shouts, "hello down there"' }
+    });
+
+    aliceWs.close(1000, "done");
+    bobWs.close(1000, "done");
+  });
+
+  it("tell sends a private message to a player elsewhere in the zone", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-zone-tell");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const caraResponse = await connectWebSocket(stub, "cara@example.com", "sub-c", "Cara");
+    const caraWs = caraResponse.webSocket!;
+    caraWs.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    const caraMessages: string[] = [];
+    aliceWs.addEventListener("message", (event) => {
+      aliceMessages.push(event.data as string);
+    });
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+    caraWs.addEventListener("message", (event) => {
+      caraMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+    caraMessages.length = 0;
+
+    await stub.moveRoom("alice@example.com", "NORTH");
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+    caraMessages.length = 0;
+
+    await stub.processInput("alice@example.com", "tell bob meet me upstairs");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: 'You tell Bob, "meet me upstairs"' }
+    });
+    expect(parseMessages(bobMessages)).toContainEqual({
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: 'Alice tells you, "meet me upstairs"' }
+    });
+    expect(caraMessages).toEqual([]);
+
+    aliceWs.close(1000, "done");
+    bobWs.close(1000, "done");
+    caraWs.close(1000, "done");
+  });
+
+  it("tell reports when the target is not in the zone", async () => {
+    const stub = env.ZONE_PROCESSOR.getByName("ws-zone-tell-missing");
+    const response = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const ws = response.webSocket!;
+    ws.accept();
+
+    const messages: string[] = [];
+    ws.addEventListener("message", (event) => {
+      messages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    messages.length = 0;
+
+    await stub.processInput("alice@example.com", "tell missing hello");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(messages)).toContainEqual({
+      type: "error",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "No one named missing is in this zone." }
+    });
+
+    ws.close(1000, "done");
   });
 
   it("second connection from same user evicts the first", async () => {
@@ -301,7 +473,7 @@ describe("ZoneProcessor", () => {
 
     expect(ws1Closed).toBe(true);
 
-    // New socket should still receive broadcasts.
+    // New socket should still receive command messages.
     const messages: string[] = [];
     ws2.addEventListener("message", (e) => {
       messages.push(e.data as string);
@@ -310,7 +482,7 @@ describe("ZoneProcessor", () => {
     await waitForWebSocketDelivery();
     messages.length = 0;
 
-    await stub.processInput("alice@example.com", "hello");
+    await stub.processInput("alice@example.com", "shout hello");
     await waitForWebSocketDelivery();
 
     expect(messages).toHaveLength(1);

@@ -532,6 +532,34 @@ describe("CommunicationHandler room helpers", () => {
     expect(handler.getPlayersInRoom(3001, "alice@example.com")).toEqual(["Bob"]);
   });
 
+  it("finds open connected players by case-insensitive character name", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: {
+        email: "alice@example.com",
+        sub: "sub-a",
+        characterName: "Alice",
+        currentRoom: 3001
+      }
+    });
+    const closed = makeMockWebSocket({
+      attachment: {
+        email: "closed@example.com",
+        sub: "sub-c",
+        characterName: "Closed",
+        currentRoom: 3001
+      },
+      readyState: WebSocket.CLOSED
+    });
+
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+    handler.registerConnection("closed@example.com", closed as unknown as WebSocket);
+
+    expect(handler.findPlayerByName("alice")).toEqual({ email: "alice@example.com", name: "Alice" });
+    expect(handler.findPlayerByName("Closed")).toBeNull();
+    expect(handler.findPlayerByName("Missing")).toBeNull();
+  });
+
   it("sends a message to one open socket", () => {
     const { handler } = makeHandler();
     const alice = makeMockWebSocket({

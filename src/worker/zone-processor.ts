@@ -37,12 +37,19 @@ interface RoomExitRow {
   doorType: number;
 }
 
+const UNKNOWN_COMMAND_MESSAGES = [
+  "I didn't understand that.",
+  "Use 'help' to see what I can understand.",
+  "Huh?"
+];
+
 /**
  * A Durable Object that manages a single game zone, providing health status and (eventually)
  * zone-specific game logic such as NPC ticks, environment updates, etc.
  */
 export class ZoneProcessor extends DurableObject<Env> {
   private comms: CommunicationHandler;
+  private unknownCommandIndex = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -202,29 +209,93 @@ export class ZoneProcessor extends DurableObject<Env> {
     };
   }
 
-  /**
-   * Process a game command from a user. Broadcasts the result to all
-   * connected WebSockets: the sender sees "You said '...'" while
-   * everyone else sees "<characterName> said '...'".
-   *
-   * Called via RPC from the Worker route (POST /api/game/input).
-   */
+  /** Process a non-movement game command from a user. */
   async processInput(userEmail: string, text: string): Promise<void> {
-    const characterName = this.comms.getCharacterName(userEmail) ?? userEmail;
-    const sub = { name: characterName, email: userEmail };
+    const input = text.trim();
+    const command = /^(\S+)(?:\s+([\s\S]*))?$/.exec(input);
+    const verb = command?.[1].toLowerCase() ?? "";
+    const rest = (command?.[2] ?? "").trim();
+
+    if (verb === "say" && rest) {
+      this.sayToRoom(userEmail, rest);
+      return;
+    }
+
+    if (verb === "shout" && rest) {
+      this.shoutToZone(userEmail, rest);
+      return;
+    }
+
+    if (verb === "tell" && rest) {
+      const tell = /^(\S+)\s+([\s\S]+)$/.exec(rest);
+      if (tell) {
+        this.tellPlayer(userEmail, tell[1], tell[2].trim());
+        return;
+      }
+    }
+
+    this.sendUnknownCommand(userEmail);
+  }
+
+  private sayToRoom(userEmail: string, message: string): void {
     const currentRoom = this.comms.getCurrentRoom(userEmail);
-    const senderMessage = { type: "message", sub, details: { message: `You said '${text}'` } };
-    const othersMessage = {
+    if (currentRoom === null) {
+      this.sendPlayerText(userEmail, "You are not in a room.", "error");
+      return;
+    }
+
+    const sub = this.getPlayerSub(userEmail);
+    this.comms.broadcastToRoom(
+      currentRoom,
+      userEmail,
+      { type: "message", sub, details: { message: `You say, "${message}"` } },
+      { type: "message", sub, details: { message: `${sub.name} says, "${message}"` } }
+    );
+  }
+
+  private shoutToZone(userEmail: string, message: string): void {
+    const sub = this.getPlayerSub(userEmail);
+    this.comms.broadcast(
+      userEmail,
+      { type: "message", sub, details: { message: `You shout, "${message}"` } },
+      { type: "message", sub, details: { message: `${sub.name} shouts, "${message}"` } }
+    );
+  }
+
+  private tellPlayer(userEmail: string, targetName: string, message: string): void {
+    const target = this.comms.findPlayerByName(targetName);
+    if (!target) {
+      this.sendPlayerText(userEmail, `No one named ${targetName} is in this zone.`, "error");
+      return;
+    }
+
+    const sub = this.getPlayerSub(userEmail);
+    if (target.email === userEmail) {
+      this.comms.sendToPlayer(userEmail, {
+        type: "message",
+        sub,
+        details: { message: `You tell yourself, "${message}"` }
+      });
+      return;
+    }
+
+    this.comms.sendToPlayer(userEmail, {
       type: "message",
       sub,
-      details: { message: `${characterName} said '${text}'` }
-    };
+      details: { message: `You tell ${target.name}, "${message}"` }
+    });
+    this.comms.sendToPlayer(target.email, {
+      type: "message",
+      sub,
+      details: { message: `${sub.name} tells you, "${message}"` }
+    });
+  }
 
-    if (currentRoom === null) {
-      this.comms.sendToPlayer(userEmail, senderMessage);
-    } else {
-      this.comms.broadcastToRoom(currentRoom, userEmail, senderMessage, othersMessage);
-    }
+  private sendUnknownCommand(userEmail: string): void {
+    const message =
+      UNKNOWN_COMMAND_MESSAGES[this.unknownCommandIndex % UNKNOWN_COMMAND_MESSAGES.length];
+    this.unknownCommandIndex++;
+    this.sendPlayerText(userEmail, message, "error");
   }
 
   private makeLeaveRoomMessage(
@@ -255,9 +326,9 @@ export class ZoneProcessor extends DurableObject<Env> {
     };
   }
 
-  private sendPlayerText(userEmail: string, message: string): void {
+  private sendPlayerText(userEmail: string, message: string, type = "message"): void {
     this.comms.sendToPlayer(userEmail, {
-      type: "message",
+      type,
       sub: this.getPlayerSub(userEmail),
       details: { message }
     });

@@ -1,9 +1,14 @@
 import { useEffect, useRef } from "react";
 
+interface OutputMessage {
+  text: string;
+  tone?: "error" | "help";
+}
+
 interface GameOutputProps {
   connected: boolean;
   error: string | null;
-  messages: string[];
+  messages: OutputMessage[];
 }
 
 function GameOutput({ connected, error, messages }: GameOutputProps) {
@@ -27,8 +32,8 @@ function GameOutput({ connected, error, messages }: GameOutputProps) {
       {error && <div className="game-error">{error}</div>}
       <div className="game-output" ref={outputRef}>
         {messages.map((msg, i) => (
-          <div key={i} className="game-message">
-            {msg}
+          <div key={i} className={`game-message${msg.tone ? ` ${msg.tone}` : ""}`}>
+            {msg.text}
           </div>
         ))}
       </div>

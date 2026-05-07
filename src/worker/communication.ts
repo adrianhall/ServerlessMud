@@ -160,6 +160,21 @@ export class CommunicationHandler {
     return players;
   }
 
+  /** Find a connected player by character name, regardless of current room. */
+  findPlayerByName(characterName: string): { email: string; name: string } | null {
+    const normalizedName = characterName.trim().toLowerCase();
+
+    for (const [email, ws] of this.connections) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+      if (attachment?.characterName.toLowerCase() === normalizedName) {
+        return { email, name: attachment.characterName };
+      }
+    }
+
+    return null;
+  }
+
   // -------------------------------------------------------------------
   // Messaging
   // -------------------------------------------------------------------
