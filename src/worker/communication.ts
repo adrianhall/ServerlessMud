@@ -13,6 +13,11 @@
 import type { Logger } from "@lib/cloudflare-logging";
 import type { GameMessage, WebSocketAttachment } from "./types";
 
+export interface ConnectionLifecycleResult {
+  attachment: WebSocketAttachment | null;
+  removed: boolean;
+}
+
 export class CommunicationHandler {
   private connections: Map<string, WebSocket>;
   private log: Logger;
@@ -71,10 +76,16 @@ export class CommunicationHandler {
    * replacement).  Completes the close handshake.
    * Called from DO's webSocketClose handler.
    */
-  handleClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): void {
+  handleClose(
+    ws: WebSocket,
+    code: number,
+    reason: string,
+    wasClean: boolean
+  ): ConnectionLifecycleResult {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
     const email = attachment?.email ?? "unknown";
-    if (this.connections.get(email) === ws) {
+    const removed = this.connections.get(email) === ws;
+    if (removed) {
       this.connections.delete(email);
     }
     try {
@@ -85,6 +96,7 @@ export class CommunicationHandler {
       // web_socket_auto_reply_to_close.
     }
     this.log.debug("websocket closed", { email, code, reason, wasClean });
+    return { attachment, removed };
   }
 
   /**
@@ -104,13 +116,15 @@ export class CommunicationHandler {
    * Handle WebSocket error.  Removes from map (only if stored socket
    * matches).  Called from DO's webSocketError handler.
    */
-  handleError(ws: WebSocket, error: unknown): void {
+  handleError(ws: WebSocket, error: unknown): ConnectionLifecycleResult {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
     const email = attachment?.email ?? "unknown";
-    if (this.connections.get(email) === ws) {
+    const removed = this.connections.get(email) === ws;
+    if (removed) {
       this.connections.delete(email);
     }
     this.log.error("websocket error", { email, error: String(error) });
+    return { attachment, removed };
   }
 
   /**
@@ -133,6 +147,14 @@ export class CommunicationHandler {
     return attachment?.currentRoom ?? null;
   }
 
+  /** Look up the current zone for a connected user. */
+  getCurrentZone(email: string): number | null {
+    const ws = this.connections.get(email);
+    if (!ws) return null;
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    return typeof attachment?.currentZoneId === "number" ? attachment.currentZoneId : null;
+  }
+
   /** Update the room stored on a user's WebSocket attachment. */
   setCurrentRoom(email: string, roomVnum: number): boolean {
     const ws = this.connections.get(email);
@@ -142,6 +164,44 @@ export class CommunicationHandler {
     if (!attachment) return false;
 
     ws.serializeAttachment({ ...attachment, currentRoom: roomVnum } satisfies WebSocketAttachment);
+    return true;
+  }
+
+  /** Update the zone and room stored on a user's WebSocket attachment. */
+  setCurrentLocation(email: string, zoneId: number, roomVnum: number): boolean {
+    const ws = this.connections.get(email);
+    if (!ws) return false;
+
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    if (!attachment) return false;
+
+    ws.serializeAttachment({
+      ...attachment,
+      currentZoneId: zoneId,
+      currentRoom: roomVnum,
+      transferring: false
+    } satisfies WebSocketAttachment);
+    return true;
+  }
+
+  /** Mark a connection as intentionally closing for a zone transfer. */
+  markZoneTransfer(email: string): boolean {
+    const ws = this.connections.get(email);
+    if (!ws) return false;
+
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    if (!attachment) return false;
+
+    ws.serializeAttachment({ ...attachment, transferring: true } satisfies WebSocketAttachment);
+    return true;
+  }
+
+  /** Close a tracked connection, if it is still present. */
+  closeConnection(email: string, code: number, reason: string): boolean {
+    const ws = this.connections.get(email);
+    if (!ws) return false;
+
+    ws.close(code, reason);
     return true;
   }
 

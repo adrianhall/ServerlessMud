@@ -32,6 +32,8 @@ interface MockWebSocketOptions {
     | (Pick<WebSocketAttachment, "email" | "sub"> & {
         characterName?: string;
         currentRoom?: number | null;
+        currentZoneId?: number;
+        transferring?: boolean;
       })
     | null;
   readyState?: number;
@@ -454,6 +456,7 @@ describe("CommunicationHandler room helpers", () => {
     const { handler } = makeHandler();
     expect(handler.getCharacterName("missing@example.com")).toBeNull();
     expect(handler.getCurrentRoom("missing@example.com")).toBeNull();
+    expect(handler.getCurrentZone("missing@example.com")).toBeNull();
   });
 
   it("returns null when a connected socket has no attachment", () => {
@@ -463,6 +466,7 @@ describe("CommunicationHandler room helpers", () => {
 
     expect(handler.getCharacterName("orphan@example.com")).toBeNull();
     expect(handler.getCurrentRoom("orphan@example.com")).toBeNull();
+    expect(handler.getCurrentZone("orphan@example.com")).toBeNull();
   });
 
   it("updates and reads the current room from the WebSocket attachment", () => {
@@ -484,6 +488,42 @@ describe("CommunicationHandler room helpers", () => {
     expect(handler.getCurrentRoom("alice@example.com")).toBe(3001);
   });
 
+  it("updates the current zone and room together", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: {
+        email: "alice@example.com",
+        sub: "sub-a",
+        characterName: "Alice",
+        currentRoom: 3001,
+        currentZoneId: 30,
+        transferring: true
+      }
+    });
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+
+    expect(handler.setCurrentLocation("alice@example.com", 31, 3100)).toBe(true);
+    expect(alice.serializeAttachment).toHaveBeenCalledWith({
+      email: "alice@example.com",
+      sub: "sub-a",
+      characterName: "Alice",
+      currentRoom: 3100,
+      currentZoneId: 31,
+      transferring: false
+    });
+    expect(handler.getCurrentRoom("alice@example.com")).toBe(3100);
+    expect(handler.getCurrentZone("alice@example.com")).toBe(31);
+  });
+
+  it("returns false when updating location for missing or unattached sockets", () => {
+    const { handler } = makeHandler();
+    const orphan = makeMockWebSocket({ attachment: null });
+    handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
+
+    expect(handler.setCurrentLocation("missing@example.com", 31, 3100)).toBe(false);
+    expect(handler.setCurrentLocation("orphan@example.com", 31, 3100)).toBe(false);
+  });
+
   it("returns false when setting the room for a missing connection", () => {
     const { handler } = makeHandler();
     expect(handler.setCurrentRoom("missing@example.com", 3001)).toBe(false);
@@ -495,6 +535,36 @@ describe("CommunicationHandler room helpers", () => {
     handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
 
     expect(handler.setCurrentRoom("orphan@example.com", 3001)).toBe(false);
+  });
+
+  it("marks zone transfers and closes tracked connections", () => {
+    const { handler } = makeHandler();
+    const alice = makeMockWebSocket({
+      attachment: { email: "alice@example.com", sub: "sub-a" }
+    });
+    handler.registerConnection("alice@example.com", alice as unknown as WebSocket);
+
+    expect(handler.markZoneTransfer("alice@example.com")).toBe(true);
+    expect(alice.serializeAttachment).toHaveBeenCalledWith({
+      email: "alice@example.com",
+      sub: "sub-a",
+      characterName: "Dorian",
+      currentRoom: null,
+      transferring: true
+    });
+
+    expect(handler.closeConnection("alice@example.com", 4000, "zone transfer")).toBe(true);
+    expect(alice.close).toHaveBeenCalledWith(4000, "zone transfer");
+  });
+
+  it("does not mark or close missing transfer connections", () => {
+    const { handler } = makeHandler();
+    const orphan = makeMockWebSocket({ attachment: null });
+    handler.registerConnection("orphan@example.com", orphan as unknown as WebSocket);
+
+    expect(handler.markZoneTransfer("missing@example.com")).toBe(false);
+    expect(handler.markZoneTransfer("orphan@example.com")).toBe(false);
+    expect(handler.closeConnection("missing@example.com", 4000, "zone transfer")).toBe(false);
   });
 
   it("lists player names in a room and can exclude one email", () => {

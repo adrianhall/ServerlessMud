@@ -531,6 +531,167 @@ describe("GameDisplay", () => {
     });
   });
 
+  it("renders teleport leave and enter notifications", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          vnum: 3054,
+          name: "The Altar",
+          description: "A quiet altar room.",
+          exits: [],
+          players: []
+        }),
+        { status: 200 }
+      )
+    );
+
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "leave_room",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: { player: "Dorian", direction: null, oldRoomId: 3001, newRoomId: 3054, mode: "teleport" }
+      })
+    );
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "enter_room",
+        sub: { name: "Bob", email: "bob@example.com" },
+        details: { player: "Bob", direction: null, oldRoomId: 3001, newRoomId: 3054, mode: "teleport" }
+      })
+    );
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "enter_room",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: { player: "Dorian", direction: null, oldRoomId: 3001, newRoomId: 3054, mode: "teleport" }
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("You disappear!")).toBeInTheDocument();
+      expect(screen.getByText("Bob suddenly appears!")).toBeInTheDocument();
+      expect(screen.getByText("You suddenly appear!")).toBeInTheDocument();
+    });
+  });
+
+  it("reconnects to the target zone and routes input there after a zone transfer", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "zone_transfer",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: {
+          player: "Dorian",
+          direction: "UP",
+          oldRoomId: 3001,
+          newRoomId: 3100,
+          roomId: 3100,
+          oldZoneId: 30,
+          zoneId: 31,
+          zoneName: "Southern Midgaard"
+        }
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("[#30-#31] You enter Southern Midgaard")).toHaveClass("zone");
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    expect(MockWebSocket.instances[1]!.url).toContain("/api/game/connect?characterName=Dorian");
+    expect(MockWebSocket.instances[1]!.url).toContain("zoneId=31");
+    expect(MockWebSocket.instances[1]!.url).toContain("roomId=3100");
+    expect(MockWebSocket.instances[1]!.url).toContain("fromRoomId=3001");
+    expect(MockWebSocket.instances[1]!.url).toContain("direction=UP");
+
+    const input = screen.getByPlaceholderText("Enter command...");
+    fireEvent.change(input, { target: { value: "look" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith("/api/game/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "look", zoneId: 31 })
+      });
+    });
+  });
+
+  it("includes teleport mode when reconnecting after a cross-zone teleport", async () => {
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "zone_transfer",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: {
+          player: "Dorian",
+          direction: null,
+          oldRoomId: 3001,
+          newRoomId: 3100,
+          roomId: 3100,
+          oldZoneId: 30,
+          zoneId: 31,
+          zoneName: "Southern Midgaard",
+          mode: "teleport"
+        }
+      })
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    expect(MockWebSocket.instances[1]!.url).toContain("zoneId=31");
+    expect(MockWebSocket.instances[1]!.url).toContain("roomId=3100");
+    expect(MockWebSocket.instances[1]!.url).toContain("fromRoomId=3001");
+    expect(MockWebSocket.instances[1]!.url).toContain("mode=teleport");
+  });
+
+  it("renders a generic message when zone transfer details omit a zone name", async () => {
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeInTheDocument();
+    });
+
+    const ws = MockWebSocket.instances[0]!;
+    ws.simulateMessage(
+      JSON.stringify({
+        type: "zone_transfer",
+        sub: { name: "Dorian", email: "player@example.com" },
+        details: {}
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("You enter a new zone")).toHaveClass("zone");
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+  });
+
   it("submits input on Enter via POST", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -577,6 +738,7 @@ describe("GameDisplay", () => {
       expect(screen.getByText(/Commands:/)).toHaveClass("help");
       expect(screen.getByText(/say <message>/)).toBeInTheDocument();
       expect(screen.getByText(/tell <player> <message>/)).toBeInTheDocument();
+      expect(screen.getByText(/teleport <roomnum>/)).toBeInTheDocument();
     });
 
     expect(fetchSpy).not.toHaveBeenCalled();

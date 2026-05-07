@@ -28,6 +28,7 @@ export interface RoomExit {
 /** Body of `POST /api/game/input`. */
 export interface GameInputPayload {
   text: string;
+  zoneId?: number;
 }
 
 /** Metadata serialized onto each WebSocket via serializeAttachment. */
@@ -36,4 +37,6 @@ export interface WebSocketAttachment {
   sub: string;
   characterName: string;
   currentRoom: number | null;
+  currentZoneId?: number;
+  transferring?: boolean;
 }

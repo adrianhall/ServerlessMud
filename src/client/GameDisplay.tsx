@@ -12,7 +12,7 @@ interface GameMessage {
 
 interface OutputMessage {
   text: string;
-  tone?: "error" | "help";
+  tone?: "error" | "help" | "zone";
 }
 
 interface RoomInfo {
@@ -21,6 +21,14 @@ interface RoomInfo {
   description: string;
   exits: Array<{ direction: string }>;
   players: string[];
+}
+
+interface ConnectionTarget {
+  zoneId: number;
+  roomId: number;
+  fromRoomId?: number;
+  direction?: string;
+  mode?: string;
 }
 
 interface GameDisplayProps {
@@ -38,6 +46,7 @@ const HELP_TEXT = [
   "  say <message> - speak to everyone in your room",
   "  shout <message> - broadcast to everyone in the zone",
   "  tell <player> <message> - send a private message to a player in the zone",
+  "  teleport <roomnum> - instantly move to a room",
   "  help - show this command list"
 ].join("\n");
 
@@ -47,12 +56,12 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionTarget, setConnectionTarget] = useState<ConnectionTarget | null>(null);
   const roomLoadSequence = useRef(0);
 
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const characterName = encodeURIComponent(character.name);
-    const url = `${protocol}//${location.host}/api/game/connect?characterName=${characterName}`;
+    const url = buildConnectUrl(protocol, location.host, character.name, connectionTarget);
     const ws = new WebSocket(url);
     const currentUserEmail = user?.email ?? character.userEmail;
     let active = true;
@@ -94,6 +103,20 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
 
       appendMessage(formatGameMessage(message, currentUserEmail));
 
+      if (message.type === "zone_transfer" && message.sub.email === currentUserEmail) {
+        const zoneId = getNumberDetail(message.details, "zoneId");
+        const roomId =
+          getNumberDetail(message.details, "roomId")
+          ?? getNumberDetail(message.details, "newRoomId");
+        if (zoneId !== null && roomId !== null) {
+          const fromRoomId = getNumberDetail(message.details, "oldRoomId") ?? undefined;
+          const direction = getStringDetail(message.details, "direction") ?? undefined;
+          const mode = getStringDetail(message.details, "mode") ?? undefined;
+          setConnectionTarget({ zoneId, roomId, fromRoomId, direction, mode });
+        }
+        return;
+      }
+
       if (message.type === "enter_room" && message.sub.email === currentUserEmail) {
         const roomId = getNumberDetail(message.details, "newRoomId");
         if (roomId !== null) {
@@ -103,6 +126,7 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
     };
 
     ws.onopen = () => {
+      if (!active) return;
       setConnected(true);
       setError(null);
     };
@@ -112,10 +136,12 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
     };
 
     ws.onerror = () => {
+      if (!active) return;
       setError("WebSocket connection error");
     };
 
     ws.onclose = () => {
+      if (!active) return;
       setConnected(false);
     };
 
@@ -123,7 +149,7 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
       active = false;
       ws.close();
     };
-  }, [character.name, character.userEmail, user?.email]);
+  }, [character.name, character.userEmail, connectionTarget, user?.email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -141,7 +167,9 @@ function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
       const res = await fetch("/api/game/input", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed })
+        body: JSON.stringify(
+          connectionTarget ? { text: trimmed, zoneId: connectionTarget.zoneId } : { text: trimmed }
+        )
       });
       if (!res.ok) {
         setMessages((prev) => [
@@ -201,6 +229,10 @@ function formatGameMessage(message: GameMessage, currentUserEmail: string): Outp
   }
 
   if (message.type === "leave_room") {
+    if (getStringDetail(message.details, "mode") === "teleport") {
+      return { text: isSelf ? "You disappear!" : `${message.sub.name} disappears!` };
+    }
+
     const direction = getStringDetail(message.details, "direction") ?? "somewhere";
     return {
       text: isSelf ? `You depart ${direction}` : `${message.sub.name} departs ${direction}`
@@ -208,6 +240,10 @@ function formatGameMessage(message: GameMessage, currentUserEmail: string): Outp
   }
 
   if (message.type === "enter_room") {
+    if (getStringDetail(message.details, "mode") === "teleport") {
+      return { text: isSelf ? "You suddenly appear!" : `${message.sub.name} suddenly appears!` };
+    }
+
     const direction = getStringDetail(message.details, "direction");
     if (!direction) {
       return { text: isSelf ? "You enter the game." : `${message.sub.name} enters the game.` };
@@ -221,7 +257,36 @@ function formatGameMessage(message: GameMessage, currentUserEmail: string): Outp
     };
   }
 
+  if (message.type === "zone_transfer") {
+    const zoneName = getStringDetail(message.details, "zoneName");
+    const oldZoneId = getNumberDetail(message.details, "oldZoneId");
+    const newZoneId = getNumberDetail(message.details, "zoneId");
+    const prefix = oldZoneId !== null && newZoneId !== null ? `[#${oldZoneId}-#${newZoneId}] ` : "";
+    return {
+      text: `${prefix}${zoneName ? `You enter ${zoneName}` : "You enter a new zone"}`,
+      tone: "zone"
+    };
+  }
+
   return { text: JSON.stringify(message) };
+}
+
+function buildConnectUrl(
+  protocol: string,
+  host: string,
+  characterName: string,
+  target: ConnectionTarget | null
+): string {
+  const params = new URLSearchParams({ characterName });
+  if (target) {
+    params.set("zoneId", String(target.zoneId));
+    params.set("roomId", String(target.roomId));
+    if (target.fromRoomId !== undefined) params.set("fromRoomId", String(target.fromRoomId));
+    if (target.direction) params.set("direction", target.direction);
+    if (target.mode) params.set("mode", target.mode);
+  }
+
+  return `${protocol}//${host}/api/game/connect?${params}`;
 }
 
 function formatRoomInfo(room: RoomInfo): string {

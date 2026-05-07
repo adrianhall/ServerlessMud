@@ -9,15 +9,31 @@ function connectWebSocket(
   stub: DurableObjectStub,
   email: string,
   sub = "sub-123",
-  characterName = "Dorian"
+  characterName = "Dorian",
+  options: {
+    zoneId?: number;
+    roomId?: number;
+    transferFromRoom?: number;
+    transferDirection?: string;
+    transferMode?: string;
+  } = {}
 ) {
+  const headers: Record<string, string> = {
+    "Upgrade": "websocket",
+    "X-User-Email": email,
+    "X-User-Sub": sub,
+    "X-Character-Name": characterName
+  };
+  if (options.zoneId !== undefined) headers["X-Zone-Id"] = String(options.zoneId);
+  if (options.roomId !== undefined) headers["X-Start-Room"] = String(options.roomId);
+  if (options.transferFromRoom !== undefined) {
+    headers["X-Transfer-From-Room"] = String(options.transferFromRoom);
+  }
+  if (options.transferDirection) headers["X-Transfer-Direction"] = options.transferDirection;
+  if (options.transferMode) headers["X-Transfer-Mode"] = options.transferMode;
+
   return stub.fetch("http://fake-host/", {
-    headers: {
-      "Upgrade": "websocket",
-      "X-User-Email": email,
-      "X-User-Sub": sub,
-      "X-Character-Name": characterName
-    }
+    headers
   });
 }
 
@@ -556,6 +572,163 @@ describe("ZoneProcessor", () => {
     bobWs.close(1000, "done");
   });
 
+  it("teleport broadcasts special leave and enter messages within the same zone", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-teleport-same-zone");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const caraResponse = await connectWebSocket(stub, "cara@example.com", "sub-c", "Cara");
+    const caraWs = caraResponse.webSocket!;
+    caraWs.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    const caraMessages: string[] = [];
+    aliceWs.addEventListener("message", (event) => {
+      aliceMessages.push(event.data as string);
+    });
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+    caraWs.addEventListener("message", (event) => {
+      caraMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    await stub.moveRoom("cara@example.com", "NORTH");
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+    caraMessages.length = 0;
+
+    await stub.processInput("alice@example.com", "teleport 3054");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3054,
+        mode: "teleport"
+      }
+    });
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "enter_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3054,
+        mode: "teleport"
+      }
+    });
+    expect(parseMessages(bobMessages)).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3054,
+        mode: "teleport"
+      }
+    });
+    expect(parseMessages(caraMessages)).toContainEqual({
+      type: "enter_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3054,
+        mode: "teleport"
+      }
+    });
+    await expect(stub.getRoomInfo("alice@example.com", 3054)).resolves.toMatchObject({
+      vnum: 3054
+    });
+
+    aliceWs.close(1000, "done");
+    bobWs.close(1000, "done");
+    caraWs.close(1000, "done");
+  });
+
+  it("teleport reports invalid and missing target rooms", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-teleport-invalid");
+    const response = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const ws = response.webSocket!;
+    ws.accept();
+
+    const messages: string[] = [];
+    ws.addEventListener("message", (event) => {
+      messages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    messages.length = 0;
+
+    await stub.processInput("alice@example.com", "teleport nowhere");
+    await stub.processInput("alice@example.com", "teleport 999999");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(messages)).toContainEqual({
+      type: "error",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "Usage: teleport <roomnum>." }
+    });
+    expect(parseMessages(messages)).toContainEqual({
+      type: "error",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "You cannot teleport there." }
+    });
+
+    ws.close(1000, "done");
+  });
+
+  it("broadcasts a smoke message to the room when a player disconnects", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-disconnect-smoke");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const bobMessages: string[] = [];
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    bobMessages.length = 0;
+
+    aliceWs.close(1000, "done");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(bobMessages)).toContainEqual({
+      type: "message",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "Alice disappears in a puff of smoke." }
+    });
+
+    bobWs.close(1000, "done");
+  });
+
   it("moveRoom sends a message when there is no exit", async () => {
     await ensureZone30WorldData();
     const stub = env.ZONE_PROCESSOR.getByName("ws-move-invalid");
@@ -583,10 +756,147 @@ describe("ZoneProcessor", () => {
     ws.close(1000, "done");
   });
 
-  it("moveRoom blocks exits that leave zone 30 for now", async () => {
+  it("moveRoom sends a zone transfer without a disconnect smoke message", async () => {
     await ensureZone30WorldData();
     const stub = env.ZONE_PROCESSOR.getByName("ws-move-cross-zone");
-    const response = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    aliceWs.addEventListener("message", (event) => {
+      aliceMessages.push(event.data as string);
+    });
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+
+    await stub.moveRoom("alice@example.com", "UP");
+    await waitForWebSocketDelivery();
+
+    const aliceParsed = parseMessages(aliceMessages);
+    const bobParsed = parseMessages(bobMessages);
+
+    expect(aliceParsed).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { player: "Alice", direction: "UP", oldRoomId: 3001, newRoomId: 3100 }
+    });
+    expect(aliceParsed).toContainEqual({
+      type: "zone_transfer",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: "UP",
+        oldRoomId: 3001,
+        newRoomId: 3100,
+        roomId: 3100,
+        oldZoneId: 30,
+        zoneId: 31,
+        zoneName: "Southern Midgaard"
+      }
+    });
+    expect(bobParsed).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { player: "Alice", direction: "UP", oldRoomId: 3001, newRoomId: 3100 }
+    });
+    expect(bobParsed.some((message) => JSON.stringify(message).includes("puff of smoke"))).toBe(
+      false
+    );
+
+    bobWs.close(1000, "done");
+  });
+
+  it("teleport to another zone carries teleport mode through the transfer", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-teleport-cross-zone");
+
+    const aliceResponse = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice");
+    const aliceWs = aliceResponse.webSocket!;
+    aliceWs.accept();
+
+    const bobResponse = await connectWebSocket(stub, "bob@example.com", "sub-b", "Bob");
+    const bobWs = bobResponse.webSocket!;
+    bobWs.accept();
+
+    const aliceMessages: string[] = [];
+    const bobMessages: string[] = [];
+    aliceWs.addEventListener("message", (event) => {
+      aliceMessages.push(event.data as string);
+    });
+    bobWs.addEventListener("message", (event) => {
+      bobMessages.push(event.data as string);
+    });
+
+    await waitForWebSocketDelivery();
+    aliceMessages.length = 0;
+    bobMessages.length = 0;
+
+    await stub.processInput("alice@example.com", "teleport 3100");
+    await waitForWebSocketDelivery();
+
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3100,
+        mode: "teleport"
+      }
+    });
+    expect(parseMessages(aliceMessages)).toContainEqual({
+      type: "zone_transfer",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3100,
+        mode: "teleport",
+        roomId: 3100,
+        oldZoneId: 30,
+        zoneId: 31,
+        zoneName: "Southern Midgaard"
+      }
+    });
+    expect(parseMessages(bobMessages)).toContainEqual({
+      type: "leave_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3100,
+        mode: "teleport"
+      }
+    });
+    expect(bobMessages.some((message) => message.includes("puff of smoke"))).toBe(false);
+
+    bobWs.close(1000, "done");
+  });
+
+  it("places a transferred player into the target room", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-zone-31-transfer-entry");
+    const response = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice", {
+      zoneId: 31,
+      roomId: 3100,
+      transferFromRoom: 3001,
+      transferDirection: "UP"
+    });
     const ws = response.webSocket!;
     ws.accept();
 
@@ -596,15 +906,49 @@ describe("ZoneProcessor", () => {
     });
 
     await waitForWebSocketDelivery();
-    messages.length = 0;
 
-    await stub.moveRoom("alice@example.com", "UP");
+    expect(parseMessages(messages)).toContainEqual({
+      type: "enter_room",
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { player: "Alice", direction: "DOWN", oldRoomId: 3001, newRoomId: 3100 }
+    });
+    await expect(stub.getRoomInfo("alice@example.com", 3100)).resolves.toMatchObject({
+      vnum: 3100,
+      name: "The Other Zone"
+    });
+
+    ws.close(1000, "done");
+  });
+
+  it("places a cross-zone teleporter into the target room with teleport entry mode", async () => {
+    await ensureZone30WorldData();
+    const stub = env.ZONE_PROCESSOR.getByName("ws-zone-31-teleport-entry");
+    const response = await connectWebSocket(stub, "alice@example.com", "sub-a", "Alice", {
+      zoneId: 31,
+      roomId: 3100,
+      transferFromRoom: 3001,
+      transferMode: "teleport"
+    });
+    const ws = response.webSocket!;
+    ws.accept();
+
+    const messages: string[] = [];
+    ws.addEventListener("message", (event) => {
+      messages.push(event.data as string);
+    });
+
     await waitForWebSocketDelivery();
 
     expect(parseMessages(messages)).toContainEqual({
-      type: "message",
+      type: "enter_room",
       sub: { name: "Alice", email: "alice@example.com" },
-      details: { message: "You cannot go that way yet." }
+      details: {
+        player: "Alice",
+        direction: null,
+        oldRoomId: 3001,
+        newRoomId: 3100,
+        mode: "teleport"
+      }
     });
 
     ws.close(1000, "done");

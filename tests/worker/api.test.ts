@@ -100,12 +100,20 @@ async function ensureZone30WorldData() {
        VALUES (30, 'Northern Midgaard', 'Test', 3000, 3099, 15, 2, 8)`
     ),
     env.MAP.prepare(
+      `INSERT OR IGNORE INTO zones (id, name, builder, min_vnum, max_vnum, lifespan, reset_mode, flags)
+       VALUES (31, 'Southern Midgaard', 'Test', 3100, 3199, 30, 2, 8)`
+    ),
+    env.MAP.prepare(
       `INSERT OR IGNORE INTO rooms (vnum, zone_id, name, description, flags, sector_type)
        VALUES (3001, 30, 'The Temple Of Midgaard', 'The starting room.', 0, 0)`
     ),
     env.MAP.prepare(
       `INSERT OR IGNORE INTO rooms (vnum, zone_id, name, description, flags, sector_type)
        VALUES (3054, 30, 'The Altar', 'The northern room.', 0, 0)`
+    ),
+    env.MAP.prepare(
+      `INSERT OR IGNORE INTO rooms (vnum, zone_id, name, description, flags, sector_type)
+       VALUES (3100, 31, 'The Other Zone', 'A different zone.', 0, 0)`
     ),
     env.MAP.prepare(
       `INSERT OR IGNORE INTO exits (room_vnum, direction, description, keywords, door_type, key_vnum, target_room)
@@ -186,6 +194,36 @@ describe("API routes", () => {
     expect(response.status).toBe(200);
     const data = (await response.json()) as { ok: boolean };
     expect(data).toEqual({ ok: true });
+  });
+
+  it("POST /api/game/input accepts an explicit zone id", async () => {
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        ...(await authHeaders("test@example.com")),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: "look", zoneId: 31 })
+    });
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { ok: boolean };
+    expect(data).toEqual({ ok: true });
+  });
+
+  it("POST /api/game/input validates explicit zone ids", async () => {
+    const response = await SELF.fetch("https://example.com/api/game/input", {
+      method: "POST",
+      headers: {
+        ...(await authHeaders("test@example.com")),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: "look", zoneId: "31" })
+    });
+
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("zoneId must be a positive integer");
   });
 
   it("GET /api/game/rooms/:roomId returns room details", async () => {
@@ -326,6 +364,85 @@ describe("API routes", () => {
     // Clean up the upgraded socket so the test does not leak.
     response.webSocket!.accept();
     response.webSocket!.close(1000, "test done");
+  });
+
+  it("GET /api/game/connect can target another zone room", async () => {
+    await env.MAP.prepare(
+      `INSERT INTO playerCharacters (userEmail, name, gender, lastUsed)
+       VALUES (?, ?, ?, ?)`
+    )
+      .bind("alice@example.com", "Alice2", "Female", "2026-01-01T00:00:00.000Z")
+      .run();
+
+    const response = await SELF.fetch(
+      "https://example.com/api/game/connect?characterName=alice2&zoneId=31&roomId=3100&fromRoomId=3001&direction=UP&mode=teleport",
+      {
+        headers: {
+          ...(await authHeaders("alice@example.com")),
+          Upgrade: "websocket"
+        }
+      }
+    );
+
+    expect(response.status).toBe(101);
+    expect(response.webSocket).not.toBeNull();
+
+    response.webSocket!.accept();
+    response.webSocket!.close(1000, "test done");
+  });
+
+  it("GET /api/game/connect validates transfer query values", async () => {
+    await createCharacter("alice@example.com", "alice3");
+
+    const response = await SELF.fetch(
+      "https://example.com/api/game/connect?characterName=alice3&zoneId=31&roomId=3100&direction=sideways",
+      {
+        headers: {
+          ...(await authHeaders("alice@example.com")),
+          Upgrade: "websocket"
+        }
+      }
+    );
+
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("direction is invalid");
+  });
+
+  it("GET /api/game/connect validates transfer modes", async () => {
+    await createCharacter("alice@example.com", "alice5");
+
+    const response = await SELF.fetch(
+      "https://example.com/api/game/connect?characterName=alice5&zoneId=31&roomId=3100&mode=blink",
+      {
+        headers: {
+          ...(await authHeaders("alice@example.com")),
+          Upgrade: "websocket"
+        }
+      }
+    );
+
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("mode is invalid");
+  });
+
+  it("GET /api/game/connect rejects mismatched zone and room targets", async () => {
+    await createCharacter("alice@example.com", "alice4");
+
+    const response = await SELF.fetch(
+      "https://example.com/api/game/connect?characterName=alice4&zoneId=31&roomId=3001",
+      {
+        headers: {
+          ...(await authHeaders("alice@example.com")),
+          Upgrade: "websocket"
+        }
+      }
+    );
+
+    expect(response.status).toBe(404);
+    const data = (await response.json()) as { error: string };
+    expect(data.error).toBe("Room not found");
   });
 
   it("GET /api/player-characters lists characters by most recent use", async () => {

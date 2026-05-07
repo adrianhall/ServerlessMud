@@ -11,6 +11,7 @@
   --terminal-bg: #101420;
   --terminal-fg: #d8e3d0;
   --terminal-accent: #55d58c;
+  --zone-debug: #6bbcff;
   --error: #ff6b5c;
   --success: #6fe08b;
 }
@@ -437,6 +438,10 @@ button:disabled {
 
 .game-message.help {
   color: var(--terminal-accent);
+}
+
+.game-message.zone {
+  color: var(--zone-debug);
 }
 
 .game-input-form {

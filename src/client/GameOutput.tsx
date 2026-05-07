@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 interface OutputMessage {
   text: string;
-  tone?: "error" | "help";
+  tone?: "error" | "help" | "zone";
 }
 
 interface GameOutputProps {

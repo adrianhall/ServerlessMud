@@ -9,8 +9,13 @@
 
 import { Hono } from "hono";
 import type { AuthVariables } from "@lib/cloudflare-auth";
-import { ACTIVE_ZONE_DO_NAME } from "./game-constants";
-import { parseMovementCommand } from "./directions";
+import {
+  ACTIVE_ZONE_DO_NAME,
+  ACTIVE_ZONE_ID,
+  START_ROOM_VNUM,
+  zoneProcessorName
+} from "./game-constants";
+import { DIRECTIONS, parseMovementCommand, type Direction } from "./directions";
 import type { GameInputPayload } from "./types";
 import {
   findCharacterForUser,
@@ -20,6 +25,10 @@ import {
 
 /** Sub-router mounted at `/api`. */
 const api = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+
+interface RoomZoneLookupRow {
+  zoneId: number;
+}
 
 api.route("/player-characters", playerCharactersApi);
 
@@ -68,6 +77,31 @@ api.get("/game/connect", async (c) => {
   const userEmail = c.get("userEmail");
   const userSub = c.get("userSub");
   const characterName = c.req.query("characterName")?.trim() ?? "";
+  const zoneId = parsePositiveIntegerQuery(c.req.query("zoneId"), ACTIVE_ZONE_ID);
+  const roomId = parsePositiveIntegerQuery(c.req.query("roomId"), START_ROOM_VNUM);
+  const fromRoomId = parseNullablePositiveIntegerQuery(c.req.query("fromRoomId"));
+  const direction = parseDirectionQuery(c.req.query("direction"));
+  const transferMode = parseTransferModeQuery(c.req.query("mode"));
+
+  if (zoneId === null) {
+    return c.json({ error: "zoneId must be a positive integer" }, 400);
+  }
+
+  if (roomId === null) {
+    return c.json({ error: "roomId must be a positive integer" }, 400);
+  }
+
+  if (fromRoomId === undefined) {
+    return c.json({ error: "fromRoomId must be a positive integer" }, 400);
+  }
+
+  if (direction === undefined) {
+    return c.json({ error: "direction is invalid" }, 400);
+  }
+
+  if (transferMode === undefined) {
+    return c.json({ error: "mode is invalid" }, 400);
+  }
 
   if (!characterName) {
     return c.json({ error: "characterName is required" }, 400);
@@ -78,16 +112,31 @@ api.get("/game/connect", async (c) => {
     return c.json({ error: "Character not found" }, 404);
   }
 
+  const roomZone = await findRoomZone(c.env.MAP, roomId);
+  if (!roomZone || roomZone.zoneId !== zoneId) {
+    return c.json({ error: "Room not found" }, 404);
+  }
+
   await updateCharacterLastUsed(c.env.MAP, userEmail, character.name, new Date().toISOString());
 
-  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
+  const stub = c.env.ZONE_PROCESSOR.getByName(zoneProcessorName(zoneId));
+  const headers: Record<string, string> = {
+    "Upgrade": "websocket",
+    "X-User-Email": userEmail,
+    "X-User-Sub": userSub,
+    "X-Character-Name": character.name,
+    "X-Zone-Id": String(zoneId),
+    "X-Start-Room": String(roomId)
+  };
+
+  if (c.req.query("zoneId") !== undefined || c.req.query("roomId") !== undefined) {
+    if (fromRoomId !== null) headers["X-Transfer-From-Room"] = String(fromRoomId);
+    if (direction !== null) headers["X-Transfer-Direction"] = direction;
+    if (transferMode !== null) headers["X-Transfer-Mode"] = transferMode;
+  }
+
   const proxyRequest = new Request(c.req.url, {
-    headers: {
-      "Upgrade": "websocket",
-      "X-User-Email": userEmail,
-      "X-User-Sub": userSub,
-      "X-Character-Name": character.name
-    }
+    headers
   });
 
   return stub.fetch(proxyRequest);
@@ -97,7 +146,7 @@ api.get("/game/connect", async (c) => {
  * GET /api/game/rooms/:roomId
  *
  * Returns static room details and currently connected players for a room
- * in the active zone.
+ * from the zone that owns that room.
  */
 api.get("/game/rooms/:roomId", async (c) => {
   const roomIdParam = c.req.param("roomId");
@@ -106,7 +155,12 @@ api.get("/game/rooms/:roomId", async (c) => {
   }
 
   const roomId = Number(roomIdParam);
-  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
+  const roomZone = await findRoomZone(c.env.MAP, roomId);
+  if (!roomZone) {
+    return c.json({ error: "Room not found" }, 404);
+  }
+
+  const stub = c.env.ZONE_PROCESSOR.getByName(zoneProcessorName(roomZone.zoneId));
   const room = await stub.getRoomInfo(c.get("userEmail"), roomId);
 
   if (!room) {
@@ -130,7 +184,12 @@ api.post("/game/input", async (c) => {
   }
 
   const userEmail = c.get("userEmail");
-  const stub = c.env.ZONE_PROCESSOR.getByName(ACTIVE_ZONE_DO_NAME);
+  const zoneId = parsePositiveIntegerBody(body.zoneId, ACTIVE_ZONE_ID);
+  if (zoneId === null) {
+    return c.json({ error: "zoneId must be a positive integer" }, 400);
+  }
+
+  const stub = c.env.ZONE_PROCESSOR.getByName(zoneProcessorName(zoneId));
   const direction = parseMovementCommand(body.text);
 
   if (direction) {
@@ -143,3 +202,47 @@ api.post("/game/input", async (c) => {
 });
 
 export { api };
+
+async function findRoomZone(map: D1Database, roomId: number): Promise<RoomZoneLookupRow | null> {
+  return await map
+    .prepare(
+      `SELECT zone_id AS zoneId
+       FROM rooms
+       WHERE rooms.vnum = ?`
+    )
+    .bind(roomId)
+    .first<RoomZoneLookupRow>();
+}
+
+function parsePositiveIntegerQuery(value: string | undefined, fallback: number): number | null {
+  if (value === undefined) return fallback;
+  if (!/^\d+$/.test(value)) return null;
+
+  const parsed = Number(value);
+  return parsed > 0 ? parsed : null;
+}
+
+function parseNullablePositiveIntegerQuery(value: string | undefined): number | null | undefined {
+  if (value === undefined) return null;
+  if (!/^\d+$/.test(value)) return undefined;
+
+  const parsed = Number(value);
+  return parsed > 0 ? parsed : undefined;
+}
+
+function parsePositiveIntegerBody(value: unknown, fallback: number): number | null {
+  if (value === undefined) return fallback;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function parseDirectionQuery(value: string | undefined): Direction | null | undefined {
+  if (value === undefined) return null;
+
+  const normalized = value.toUpperCase() as Direction;
+  return DIRECTIONS.includes(normalized) ? normalized : undefined;
+}
+
+function parseTransferModeQuery(value: string | undefined): "teleport" | null | undefined {
+  if (value === undefined) return null;
+  return value === "teleport" ? "teleport" : undefined;
+}
