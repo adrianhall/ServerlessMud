@@ -50,6 +50,7 @@ export {
   verifyAccessJwt,
   parseCookie,
   buildCookieHeader,
+  clearCookieHeader,
   DEFAULT_DEV_SECRET,
   COOKIE_NAME,
   JWT_HEADER,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import GameDisplay from "@src/client/GameDisplay";
+import type { PlayerCharacter } from "@src/shared/player-character";
 
 // ---------------------------------------------------------------------------
 // Minimal WebSocket mock for happy-dom
@@ -48,9 +49,27 @@ beforeEach(() => {
   vi.stubGlobal("WebSocket", MockWebSocket);
 });
 
+const TEST_CHARACTER: PlayerCharacter = {
+  userEmail: "player@example.com",
+  name: "Dorian",
+  gender: "Neutral",
+  lastUsed: "2026-01-01T00:00:00.000Z"
+};
+
+function renderGameDisplay() {
+  return render(
+    <GameDisplay
+      info={{ name: "ServerlessMud", version: "0.0.1" }}
+      user={{ email: "player@example.com", id: "user-123" }}
+      character={TEST_CHARACTER}
+      onExitGame={vi.fn()}
+    />
+  );
+}
+
 describe("GameDisplay", () => {
   it("renders the terminal UI elements", () => {
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     // Status indicator
     expect(screen.getByText(/Connected|Disconnected/)).toBeInTheDocument();
@@ -63,7 +82,7 @@ describe("GameDisplay", () => {
   });
 
   it("displays Connected status after WebSocket opens", async () => {
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -71,7 +90,7 @@ describe("GameDisplay", () => {
   });
 
   it("displays Disconnected status after WebSocket closes", async () => {
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     // Wait for connection, then close.
     await waitFor(() => {
@@ -87,18 +106,18 @@ describe("GameDisplay", () => {
   });
 
   it("renders received WebSocket messages", async () => {
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
 
     const ws = MockWebSocket.instances[0]!;
-    ws.simulateMessage('{"type":"message","sub":"a@b.com","details":{"message":"Hello"}}');
+    ws.simulateMessage('{"type":"message","sub":{"name":"Dorian","email":"a@b.com"},"details":{"message":"Hello"}}');
 
     await waitFor(() => {
       expect(
-        screen.getByText('{"type":"message","sub":"a@b.com","details":{"message":"Hello"}}')
+        screen.getByText('{"type":"message","sub":{"name":"Dorian","email":"a@b.com"},"details":{"message":"Hello"}}')
       ).toBeInTheDocument();
     });
   });
@@ -108,7 +127,7 @@ describe("GameDisplay", () => {
       new Response(JSON.stringify({ ok: true }), { status: 200 })
     );
 
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -135,7 +154,7 @@ describe("GameDisplay", () => {
       new Response(JSON.stringify({ ok: true }), { status: 200 })
     );
 
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     const input = screen.getByPlaceholderText("Enter command...");
     fireEvent.submit(input.closest("form")!);
@@ -147,11 +166,9 @@ describe("GameDisplay", () => {
   });
 
   it("shows error message in output when POST fails", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 500 })
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 500 }));
 
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -169,7 +186,7 @@ describe("GameDisplay", () => {
   it("shows error message in output when POST throws", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network failure"));
 
-    render(<GameDisplay userEmail="player@example.com" />);
+    renderGameDisplay();
 
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -182,5 +199,34 @@ describe("GameDisplay", () => {
     await waitFor(() => {
       expect(screen.getByText("[error] Network failure")).toBeInTheDocument();
     });
+  });
+
+  it("connects WebSocket with selected character name", async () => {
+    renderGameDisplay();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances[0]?.url).toContain(
+        "/api/game/connect?characterName=Dorian"
+      );
+    });
+  });
+
+  it("renders banner profile, character, and exit action", () => {
+    const onExitGame = vi.fn();
+
+    render(
+      <GameDisplay
+        info={{ name: "ServerlessMud", version: "0.0.1" }}
+        user={{ email: "player@example.com", id: "user-123" }}
+        character={TEST_CHARACTER}
+        onExitGame={onExitGame}
+      />
+    );
+
+    expect(screen.getByText("player@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Playing Dorian")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit Game" }));
+    expect(onExitGame).toHaveBeenCalledOnce();
   });
 });

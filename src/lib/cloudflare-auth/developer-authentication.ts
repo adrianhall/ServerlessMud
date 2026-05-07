@@ -13,8 +13,11 @@ import type { DeveloperAuthSettings, Logger } from "./types";
 import { createDefaultLogger } from "./default-logger";
 import {
   signDevJwt,
+  verifyDevJwt,
   buildCookieHeader,
+  clearCookieHeader,
   parseCookie,
+  DEFAULT_DEV_SECRET,
   JWT_HEADER,
   EMAIL_HEADER,
   USER_HEADER
@@ -98,11 +101,21 @@ export function developerAuthentication(settings?: DeveloperAuthSettings): Middl
     }
 
     // -----------------------------------------------------------------
-    // 5.  Cookie present  →  inject headers and continue.
+    // 5.  Cookie present  →  verify, then inject headers and continue.
+    //     If the token is expired or invalid, clear the stale cookie
+    //     and redirect to the login page so the user can re-authenticate.
     // -----------------------------------------------------------------
     const token = parseCookie(c.req.header("cookie"));
     if (token) {
-      return forwardWithHeaders(c, token, next, log);
+      const verified = await verifyDevJwt(token, devSecret ?? DEFAULT_DEV_SECRET);
+      if (verified) {
+        return forwardWithHeaders(c, token, next, log);
+      }
+
+      log.info("Cookie token invalid or expired – clearing cookie and redirecting to login");
+      c.header("Set-Cookie", clearCookieHeader());
+      const loginRedirect = `${loginPath}?redirect=${encodeURIComponent(pathname)}`;
+      return c.redirect(loginRedirect, 302);
     }
 
     // -----------------------------------------------------------------

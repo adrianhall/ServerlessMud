@@ -1,31 +1,27 @@
-/**
- * VT220-style game terminal component.
- *
- * Connects to the game server via WebSocket for real-time messages
- * and sends player commands via POST /api/game/input.
- *
- * @module
- */
-
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import type { PlayerCharacter } from "../shared/player-character";
+import AppBanner from "./AppBanner";
+import GameInput from "./GameInput";
+import GameOutput from "./GameOutput";
 
 interface GameDisplayProps {
-  userEmail: string;
+  info: { name: string; version: string } | null;
+  user: { email: string; id: string } | null;
+  character: PlayerCharacter;
+  onExitGame: () => void;
 }
 
 /** Game terminal with WebSocket connection and command input. */
-function GameDisplay({ userEmail: _userEmail }: GameDisplayProps) {
+function GameDisplay({ info, user, character, onExitGame }: GameDisplayProps) {
   const [messages, setMessages] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const outputRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${location.host}/api/game/connect`;
+    const characterName = encodeURIComponent(character.name);
+    const url = `${protocol}//${location.host}/api/game/connect?characterName=${characterName}`;
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
@@ -45,20 +41,10 @@ function GameDisplay({ userEmail: _userEmail }: GameDisplayProps) {
       setConnected(false);
     };
 
-    wsRef.current = ws;
-
     return () => {
       ws.close();
     };
-  }, []);
-
-  // Auto-scroll output to bottom when new messages arrive.
-  useEffect(() => {
-    const el = outputRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages]);
+  }, [character.name]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,31 +69,12 @@ function GameDisplay({ userEmail: _userEmail }: GameDisplayProps) {
   }
 
   return (
-    <div className="game-display">
-      <div className="game-header">
-        <span className={`game-status${connected ? "" : " disconnected"}`}>
-          {connected ? "Connected" : "Disconnected"}
-        </span>
+    <div className="game-page">
+      <AppBanner info={info} user={user} character={character} onExitGame={onExitGame} />
+      <div className="game-display">
+        <GameOutput connected={connected} error={error} messages={messages} />
+        <GameInput input={input} onInputChange={setInput} onSubmit={handleSubmit} />
       </div>
-      {error && <div className="game-error">{error}</div>}
-      <div className="game-output" ref={outputRef}>
-        {messages.map((msg, i) => (
-          <div key={i} className="game-message">
-            {msg}
-          </div>
-        ))}
-      </div>
-      <form className="game-input-form" onSubmit={handleSubmit}>
-        <span className="game-prompt">&gt;</span>
-        <input
-          className="game-input"
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          autoFocus
-          placeholder="Enter command..."
-        />
-      </form>
     </div>
   );
 }

@@ -6,12 +6,14 @@ function connectWebSocket(
   stub: DurableObjectStub,
   email: string,
   sub = "sub-123",
+  characterName = "Dorian",
 ) {
   return stub.fetch("http://fake-host/", {
     headers: {
       Upgrade: "websocket",
       "X-User-Email": email,
       "X-User-Sub": sub,
+      "X-Character-Name": characterName,
     },
   });
 }
@@ -83,7 +85,7 @@ describe("ZoneProcessor", () => {
     const parsed = JSON.parse(messages[0]);
     expect(parsed).toEqual({
       type: "message",
-      sub: "alice@example.com",
+      sub: { name: "Dorian", email: "alice@example.com" },
       details: { message: "You said 'look'" },
     });
 
@@ -117,9 +119,9 @@ describe("ZoneProcessor", () => {
     expect(JSON.parse(aliceMessages[0]).details.message).toBe("You said 'wave'");
 
     expect(bobMessages).toHaveLength(1);
-    expect(JSON.parse(bobMessages[0]).details.message).toBe(
-      "alice@example.com said 'wave'",
-    );
+    const bobParsed = JSON.parse(bobMessages[0]);
+    expect(bobParsed.details.message).toBe("Dorian said 'wave'");
+    expect(bobParsed.sub).toEqual({ name: "Dorian", email: "alice@example.com" });
 
     ws1.close(1000, "done");
     ws2.close(1000, "done");

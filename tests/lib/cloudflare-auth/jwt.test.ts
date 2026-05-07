@@ -6,6 +6,7 @@ import {
   verifyAccessJwt,
   parseCookie,
   buildCookieHeader,
+  clearCookieHeader,
   DEFAULT_DEV_SECRET,
   COOKIE_NAME
 } from "@lib/cloudflare-auth";
@@ -124,6 +125,21 @@ describe("JWT utilities", () => {
       const header = buildCookieHeader("tok", false);
       expect(header).not.toContain("Secure");
       expect(header).toContain("HttpOnly");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // clearCookieHeader
+  // -----------------------------------------------------------------------
+
+  describe("clearCookieHeader", () => {
+    it("produces a Set-Cookie value that clears the CF_Authorization cookie", () => {
+      const header = clearCookieHeader();
+      expect(header).toContain(`${COOKIE_NAME}=`);
+      expect(header).toContain("Max-Age=0");
+      expect(header).toContain("HttpOnly");
+      expect(header).toContain("SameSite=Lax");
+      expect(header).toContain("Path=/");
     });
   });
 

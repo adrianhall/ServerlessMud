@@ -6,7 +6,7 @@
 /** JSON message pushed from the server to the client over WebSocket. */
 export interface GameMessage {
   type: string;
-  sub: string;
+  sub: { name: string; email: string };
   details: Record<string, unknown>;
 }
 
@@ -19,4 +19,5 @@ export interface GameInputPayload {
 export interface WebSocketAttachment {
   email: string;
   sub: string;
+  characterName: string;
 }

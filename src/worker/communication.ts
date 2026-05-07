@@ -113,6 +113,18 @@ export class CommunicationHandler {
     this.log.error("websocket error", { email, error: String(error) });
   }
 
+  /**
+   * Look up the character name for a connected user by reading the
+   * WebSocket attachment.  Returns null if the user has no active
+   * connection.
+   */
+  getCharacterName(email: string): string | null {
+    const ws = this.connections.get(email);
+    if (!ws) return null;
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    return attachment?.characterName ?? null;
+  }
+
   // -------------------------------------------------------------------
   // Messaging
   // -------------------------------------------------------------------

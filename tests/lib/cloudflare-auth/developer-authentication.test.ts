@@ -212,17 +212,40 @@ describe("developerAuthentication middleware", () => {
       expect(body.userHeader).toBe("dev-injected@example.com");
     });
 
-    it("passes through without headers when cookie JWT is malformed", async () => {
+    it("redirects to login and clears cookie when cookie JWT is malformed", async () => {
       const app = createApp();
-      app.get("/api/fallback", (c) => c.text("ok"));
 
       const res = await app.request(`${BASE}/api/test`, {
         headers: { Cookie: `${COOKIE_NAME}=not-a-jwt` }
       });
 
-      // The middleware should still call next() — the downstream
-      // cloudflareAccess middleware will reject the bad token.
-      expect(res.status).toBe(200);
+      // The middleware should detect the invalid token, clear the
+      // cookie, and redirect to login instead of forwarding a bad
+      // token to the downstream cloudflareAccess middleware.
+      expect(res.status).toBe(302);
+      const location = res.headers.get("location") ?? "";
+      expect(location).toContain("/_auth/login");
+      expect(location).toContain(encodeURIComponent("/api/test"));
+
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain("Max-Age=0");
+    });
+
+    it("redirects to login and clears cookie when cookie JWT is expired", async () => {
+      const token = await signDevJwt("expired@example.com", { lifetime: -1 });
+      const app = createApp();
+
+      const res = await app.request(`${BASE}/api/test`, {
+        headers: { Cookie: `${COOKIE_NAME}=${token}` }
+      });
+
+      expect(res.status).toBe(302);
+      const location = res.headers.get("location") ?? "";
+      expect(location).toContain("/_auth/login");
+      expect(location).toContain(encodeURIComponent("/api/test"));
+
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain("Max-Age=0");
     });
   });
 

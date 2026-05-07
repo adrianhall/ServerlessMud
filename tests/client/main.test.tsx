@@ -2,12 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { waitFor } from "@testing-library/react";
 
 beforeEach(() => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify({ name: "ServerlessMud", version: "0.0.1" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    })
-  );
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const body = url.includes("/api/me")
+      ? { email: "player@example.com", id: "user-123" }
+      : { name: "ServerlessMud", version: "0.0.1" };
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+  });
 });
 
 describe("main entry point", () => {
@@ -22,7 +28,7 @@ describe("main entry point", () => {
 
     // createRoot().render() is async — wait for React to flush.
     await waitFor(() => {
-      expect(document.querySelector("#root h1")).toHaveTextContent("ServerlessMud");
+      expect(document.querySelector("#root .banner-title")).toHaveTextContent("ServerlessMud");
     });
   });
 

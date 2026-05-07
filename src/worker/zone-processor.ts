@@ -42,14 +42,15 @@ export class ZoneProcessor extends DurableObject<Env> {
 
     const email = request.headers.get("X-User-Email");
     const sub = request.headers.get("X-User-Sub");
+    const characterName = request.headers.get("X-Character-Name");
 
-    if (!email || !sub) {
+    if (!email || !sub || !characterName) {
       return new Response("Missing user identity headers", { status: 401 });
     }
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [email]);
-    server.serializeAttachment({ email, sub } satisfies WebSocketAttachment);
+    server.serializeAttachment({ email, sub, characterName } satisfies WebSocketAttachment);
     this.comms.registerConnection(email, server);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -58,15 +59,17 @@ export class ZoneProcessor extends DurableObject<Env> {
   /**
    * Process a game command from a user. Broadcasts the result to all
    * connected WebSockets: the sender sees "You said '...'" while
-   * everyone else sees "<email> said '...'".
+   * everyone else sees "<characterName> said '...'".
    *
    * Called via RPC from the Worker route (POST /api/game/input).
    */
   async processInput(userEmail: string, text: string): Promise<void> {
+    const characterName = this.comms.getCharacterName(userEmail) ?? userEmail;
+    const sub = { name: characterName, email: userEmail };
     this.comms.broadcast(
       userEmail,
-      { type: "message", sub: userEmail, details: { message: `You said '${text}'` } },
-      { type: "message", sub: userEmail, details: { message: `${userEmail} said '${text}'` } }
+      { type: "message", sub, details: { message: `You said '${text}'` } },
+      { type: "message", sub, details: { message: `${characterName} said '${text}'` } }
     );
   }
 

@@ -28,7 +28,7 @@ const silentLogger: Logger = {
 // ---------------------------------------------------------------------------
 
 interface MockWebSocketOptions {
-  attachment?: WebSocketAttachment | null;
+  attachment?: (Omit<WebSocketAttachment, "characterName"> & { characterName?: string }) | null;
   readyState?: number;
   closeThrows?: boolean;
 }
@@ -47,7 +47,9 @@ interface MockWebSocket {
  * exposing only the surface used by `CommunicationHandler`.
  */
 function makeMockWebSocket(opts: MockWebSocketOptions = {}): MockWebSocket {
-  const attachment = opts.attachment ?? null;
+  const attachment = opts.attachment
+    ? ({ characterName: "Dorian", ...opts.attachment } satisfies WebSocketAttachment)
+    : null;
   const readyState = opts.readyState ?? WebSocket.OPEN;
   const sentMessages: string[] = [];
 
@@ -150,8 +152,8 @@ describe("CommunicationHandler constructor", () => {
     // The last-registered socket should be the one that receives broadcasts.
     handler.broadcast(
       "alice@example.com",
-      { type: "message", sub: "alice@example.com", details: { message: "self" } },
-      { type: "message", sub: "alice@example.com", details: { message: "other" } }
+      { type: "message", sub: { name: "Alice", email: "alice@example.com" }, details: { message: "self" } },
+      { type: "message", sub: { name: "Alice", email: "alice@example.com" }, details: { message: "other" } }
     );
     expect(second.send).toHaveBeenCalledTimes(1);
     expect(first.send).not.toHaveBeenCalled();
@@ -373,13 +375,13 @@ describe("CommunicationHandler.broadcast", () => {
   beforeEach(() => {
     senderMessage = {
       type: "message",
-      sub: "alice@example.com",
+      sub: { name: "Alice", email: "alice@example.com" },
       details: { message: "You said 'hi'" }
     };
     othersMessage = {
       type: "message",
-      sub: "alice@example.com",
-      details: { message: "alice@example.com said 'hi'" }
+      sub: { name: "Alice", email: "alice@example.com" },
+      details: { message: "Alice said 'hi'" }
     };
   });
 

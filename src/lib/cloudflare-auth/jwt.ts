@@ -173,6 +173,17 @@ export function buildCookieHeader(token: string, isSecure: boolean): string {
 }
 
 /**
+ * Build a `Set-Cookie` header that clears the `CF_Authorization`
+ * cookie by setting it to an empty value with `Max-Age=0`.
+ *
+ * Use this when a stale or invalid cookie needs to be removed so the
+ * user can re-authenticate.
+ */
+export function clearCookieHeader(): string {
+  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+/**
  * Parse the value of the `CF_Authorization` cookie from a `Cookie`
  * header string.  Returns `undefined` when the cookie is absent.
  */

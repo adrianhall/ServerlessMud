@@ -10,9 +10,16 @@
 import { Hono } from "hono";
 import type { AuthVariables } from "@lib/cloudflare-auth";
 import type { GameInputPayload } from "./types";
+import {
+  findCharacterForUser,
+  playerCharactersApi,
+  updateCharacterLastUsed
+} from "./player-characters-api";
 
 /** Sub-router mounted at `/api`. */
 const api = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+
+api.route("/player-characters", playerCharactersApi);
 
 /**
  * GET /api/version
@@ -58,13 +65,26 @@ api.get("/game/connect", async (c) => {
 
   const userEmail = c.get("userEmail");
   const userSub = c.get("userSub");
+  const characterName = c.req.query("characterName")?.trim() ?? "";
+
+  if (!characterName) {
+    return c.json({ error: "characterName is required" }, 400);
+  }
+
+  const character = await findCharacterForUser(c.env.MAP, userEmail, characterName);
+  if (!character) {
+    return c.json({ error: "Character not found" }, 404);
+  }
+
+  await updateCharacterLastUsed(c.env.MAP, userEmail, character.name, new Date().toISOString());
 
   const stub = c.env.ZONE_PROCESSOR.getByName("demo");
   const proxyRequest = new Request(c.req.url, {
     headers: {
       "Upgrade": "websocket",
       "X-User-Email": userEmail,
-      "X-User-Sub": userSub
+      "X-User-Sub": userSub,
+      "X-Character-Name": character.name
     }
   });
 
