@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { TextReader, asciiFlagConv } from "../../../src/tools/generate-world/parsers/text-reader.js";
-import type { Logger } from "../../../src/tools/generate-world/logger.js";
+import { TextReader, asciiFlagConv } from "@src/tools/generate-world/parsers/text-reader.js";
+import type { Logger } from "@src/tools/lib/logger.js";
 
 function makeLog(): Logger {
   return {

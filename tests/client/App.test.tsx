@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import App from "../../src/client/App";
+import App from "@src/client/App";
 
 /** Build a successful JSON response. */
 function jsonResponse(body: unknown): Response {

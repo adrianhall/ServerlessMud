@@ -7,7 +7,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { Logger } from "../logger.js";
+import type { Logger } from "../../lib/logger.js";
 
 /**
  * Parse a zone index file and return the list of zone number strings.

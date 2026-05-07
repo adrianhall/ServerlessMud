@@ -13,7 +13,8 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
-        "src/tools/generate-world/index.ts" // CLI entry point — tested via end-to-end smoke test
+        "src/tools/generate-world/index.ts", // CLI entry point — tested via end-to-end smoke test
+        "src/tools/generate-world-sql/index.ts" // CLI entry point — tested via end-to-end smoke test
       ],
       thresholds: {
         lines: 90,

@@ -10,7 +10,7 @@ import {
   TRIGGER_TYPES,
   decodeBitvector,
   lookupValue
-} from "../../../src/tools/generate-world/constants.js";
+} from "@src/tools/generate-world/constants.js";
 
 describe("constant tables", () => {
   it("has 10 directions", () => {

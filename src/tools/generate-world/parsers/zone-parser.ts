@@ -15,8 +15,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import type { Logger } from "../logger.js";
-import type { Zone, ZoneCommand } from "../types.js";
+import type { Logger } from "../../lib/logger.js";
+import type { Zone, ZoneCommand } from "../../lib/types.js";
 import { RESET_MODES, ZONE_FLAGS, decodeBitvector, lookupValue } from "../constants.js";
 import { TextReader, asciiFlagConv } from "./text-reader.js";
 

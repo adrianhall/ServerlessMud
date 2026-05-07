@@ -6,7 +6,7 @@
  * that tracks position for diagnostic messages.
  */
 
-import type { Logger } from "../logger.js";
+import type { Logger } from "../../lib/logger.js";
 
 /**
  * A stateful line reader over a text file.

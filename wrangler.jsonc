@@ -26,6 +26,15 @@
     { "tag": "v1", "new_sqlite_classes": ["ZoneProcessor"] }
   ],
 
+  "d1_databases": [
+    {
+      "binding": "MAP",
+      "database_name": "mud-map",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations/map"
+    }
+  ],
+
   "observability": {
     "enabled": true
   }

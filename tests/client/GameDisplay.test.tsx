@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import GameDisplay from "../../src/client/GameDisplay";
+import GameDisplay from "@src/client/GameDisplay";
 
 // ---------------------------------------------------------------------------
 // Minimal WebSocket mock for happy-dom

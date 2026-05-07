@@ -2,19 +2,20 @@
  * CLI entry point for the TbaMUD world parser.
  *
  * Usage:
- *   pnpm run generate:world -- --zone 30
- *   pnpm run generate:world -- --index index.mini
+ *   pnpm run generate:world                          # all zones (default: --index index)
+ *   pnpm run generate:world -- --zone 30             # single zone
+ *   pnpm run generate:world -- --index index.mini    # zones from a custom index file
  *   pnpm run generate:world -- --dir data/tbamud/lib/world --out data/json --zone 30
  */
 
 import { Command } from "commander";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../lib/logger.js";
 import { parseIndexFile } from "./parsers/index-parser.js";
 import { parseZoneFile } from "./parsers/zone-parser.js";
 import { parseWorldFile } from "./parsers/world-parser.js";
-import type { ZoneFile } from "./types.js";
+import type { ZoneFile } from "../lib/types.js";
 
 interface CliOptions {
   dir: string;
@@ -30,21 +31,22 @@ const program = new Command()
   .option("--dir <path>", "Path to TbaMUD world data directory", "data/tbamud/lib/world")
   .option("--out <path>", "Output directory for JSON files", "data/json")
   .option("--zone <number>", "Parse a single zone by number")
-  .option("--index <file>", "Parse all zones listed in an index file")
+  .option("--index <file>", "Parse all zones listed in an index file (default: index)")
   .option("--verbose", "Enable debug-level logging", false)
   .action(run);
 
 async function run(opts: CliOptions): Promise<void> {
   const log = createLogger({ verbose: opts.verbose });
 
-  // Validate: exactly one of --zone or --index must be provided
-  if (!opts.zone && !opts.index) {
-    log.error("Either --zone <number> or --index <file> is required.");
-    process.exit(1);
-  }
+  // Validate: --zone and --index are mutually exclusive
   if (opts.zone && opts.index) {
     log.error("Cannot use both --zone and --index at the same time.");
     process.exit(1);
+  }
+
+  // Default to --index index when neither is provided
+  if (!opts.zone && !opts.index) {
+    opts.index = "index";
   }
 
   // Resolve paths
@@ -120,7 +122,7 @@ async function processZone(zoneId: string, worldDir: string, log: Logger): Promi
 }
 
 // Required for the Logger type used in processZone
-import type { Logger } from "./logger.js";
+import type { Logger } from "../lib/logger.js";
 
 // Strip any standalone "--" from argv that pnpm injects when forwarding
 // script arguments (e.g. `pnpm run generate:world -- --zone 30`).

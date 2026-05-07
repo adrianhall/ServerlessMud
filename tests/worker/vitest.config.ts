@@ -5,7 +5,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@lib": path.resolve(__dirname, "../../src/lib")
+      "@lib": path.resolve(__dirname, "../../src/lib"),
+      "@src": path.resolve(__dirname, "../../src")
     }
   },
   plugins: [

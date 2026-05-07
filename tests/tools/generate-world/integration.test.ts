@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseZoneFile } from "../../../src/tools/generate-world/parsers/zone-parser.js";
-import { parseWorldFile } from "../../../src/tools/generate-world/parsers/world-parser.js";
-import { parseIndexFile } from "../../../src/tools/generate-world/parsers/index-parser.js";
-import type { Logger } from "../../../src/tools/generate-world/logger.js";
-import type { ZoneFile } from "../../../src/tools/generate-world/types.js";
+import { parseZoneFile } from "@src/tools/generate-world/parsers/zone-parser.js";
+import { parseWorldFile } from "@src/tools/generate-world/parsers/world-parser.js";
+import { parseIndexFile } from "@src/tools/generate-world/parsers/index-parser.js";
+import type { Logger } from "@src/tools/lib/logger.js";
+import type { ZoneFile } from "@src/tools/lib/types.js";
 import path from "node:path";
 
 function makeLog(): Logger {

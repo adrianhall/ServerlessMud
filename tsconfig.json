@@ -13,7 +13,8 @@
     "resolveJsonModule": true,
     "types": ["vite/client"],
     "paths": {
-      "@lib/*": ["./src/lib/*"]
+      "@lib/*": ["./src/lib/*"],
+      "@src/*": ["./src/*"]
     }
   },
   "include": ["src", "tests", "worker-configuration.d.ts"]

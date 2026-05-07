@@ -12,9 +12,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { CommunicationHandler } from "../../src/worker/communication";
+import { CommunicationHandler } from "@src/worker/communication";
 import type { Logger } from "@lib/cloudflare-logging";
-import type { GameMessage, WebSocketAttachment } from "../../src/worker/types";
+import type { GameMessage, WebSocketAttachment } from "@src/worker/types";
 
 const silentLogger: Logger = {
   debug: vi.fn(),

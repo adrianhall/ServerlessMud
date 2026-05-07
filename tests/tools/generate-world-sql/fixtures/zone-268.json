@@ -1,0 +1,119 @@
+{
+  "id": "268",
+  "zone": {
+    "name": "Vice Island II",
+    "builder": "Questor",
+    "min_vnum": 26800,
+    "max_vnum": 26899,
+    "lifespan": 30,
+    "reset_mode_value": 1,
+    "reset_mode": "EMPTY",
+    "flags_value": 0,
+    "flags": [],
+    "commands": [
+      {
+        "command": "M",
+        "if_flag": false,
+        "arg1": 26716,
+        "arg2": 1,
+        "arg3": 26804,
+        "line": 5,
+        "comment": "(the Grand Dragon of Terror)"
+      },
+      {
+        "command": "G",
+        "if_flag": true,
+        "arg1": 26734,
+        "arg2": 99,
+        "arg3": -1,
+        "line": 6,
+        "comment": "(a red-hot key)"
+      }
+    ]
+  },
+  "world": [
+    {
+      "vnum": 26800,
+      "name": "Blindingly lit hallway",
+      "description": "A bright hallway.",
+      "zone_number": 268,
+      "flags_value": 8,
+      "flags": ["INDOORS"],
+      "sector_type_value": 0,
+      "sector_type": "INSIDE",
+      "exits": [
+        {
+          "direction": "NORTH",
+          "direction_index": 0,
+          "description": "You see a door.",
+          "keywords": ["door", "secret"],
+          "door_type_value": 0,
+          "exit_type": "NORMAL",
+          "key_vnum": 0,
+          "target_room": 26804
+        },
+        {
+          "direction": "EAST",
+          "direction_index": 1,
+          "description": "",
+          "keywords": [],
+          "door_type_value": 0,
+          "exit_type": "NORMAL",
+          "key_vnum": 0,
+          "target_room": 26802
+        }
+      ],
+      "extra_descriptions": [
+        {
+          "keywords": ["credits"],
+          "description": "Built by Questor."
+        }
+      ],
+      "triggers": []
+    },
+    {
+      "vnum": 26801,
+      "name": "Deadly Iron Maiden",
+      "description": "A trap room.",
+      "zone_number": 268,
+      "flags_value": 516,
+      "flags": ["NO_MOB", "PRIVATE"],
+      "sector_type_value": 0,
+      "sector_type": "INSIDE",
+      "exits": [],
+      "extra_descriptions": [],
+      "triggers": [
+        { "vnum": 26800 }
+      ]
+    },
+    {
+      "vnum": 26804,
+      "name": "Grand Temple of Terror",
+      "description": "A shrine to terror.",
+      "zone_number": 268,
+      "flags_value": 8,
+      "flags": ["INDOORS"],
+      "sector_type_value": 0,
+      "sector_type": "INSIDE",
+      "exits": [
+        {
+          "direction": "EAST",
+          "direction_index": 1,
+          "description": "You see nothing worth mentioning...",
+          "keywords": ["door", "secret"],
+          "door_type_value": 1,
+          "exit_type": "DOOR",
+          "key_vnum": -1,
+          "target_room": 26797
+        }
+      ],
+      "extra_descriptions": [
+        {
+          "keywords": ["drawings"],
+          "description": "Don't look at them!"
+        }
+      ],
+      "triggers": []
+    }
+  ]
+}

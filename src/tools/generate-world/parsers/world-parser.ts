@@ -10,8 +10,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import type { Logger } from "../logger.js";
-import type { Exit, ExtraDescription, Room, TriggerAttachment } from "../types.js";
+import type { Logger } from "../../lib/logger.js";
+import type { Exit, ExtraDescription, Room, TriggerAttachment } from "../../lib/types.js";
 import {
   DIRECTIONS,
   EXIT_TYPES,

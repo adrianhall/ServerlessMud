@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseZoneFile } from "../../../src/tools/generate-world/parsers/zone-parser.js";
-import type { Logger } from "../../../src/tools/generate-world/logger.js";
+import { parseZoneFile } from "@src/tools/generate-world/parsers/zone-parser.js";
+import type { Logger } from "@src/tools/lib/logger.js";
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
