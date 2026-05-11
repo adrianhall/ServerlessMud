@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { signDevJwt, JWT_HEADER } from "@lib/cloudflare-auth";
+import { signDevJwt, JWT_HEADER } from "@adrianhall/cloudflare-auth";
 
 async function authHeaders(email: string) {
   const token = await signDevJwt(email);

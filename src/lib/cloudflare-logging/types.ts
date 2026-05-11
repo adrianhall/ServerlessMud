@@ -50,7 +50,7 @@ export type LogFormat = "pretty" | "structured";
  * Minimal structured logger.
  *
  * This interface is intentionally kept small so that consumers such as
- * `cloudflare-auth` can define the same shape independently and remain
+ * `@adrianhall/cloudflare-auth` can define the same shape independently and remain
  * standalone.
  */
 export interface Logger {

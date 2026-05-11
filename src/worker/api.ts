@@ -8,7 +8,7 @@
  */
 
 import { Hono } from "hono";
-import type { AuthVariables } from "@lib/cloudflare-auth";
+import type { AuthVariables } from "@adrianhall/cloudflare-auth";
 import {
   ACTIVE_ZONE_DO_NAME,
   ACTIVE_ZONE_ID,

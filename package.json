@@ -32,10 +32,10 @@
         "test:coverage": "vitest run --coverage"
     },
     "dependencies": {
+        "@adrianhall/cloudflare-auth": "github:adrianhall/cloudflare-auth",
         "chalk": "^5.6.2",
         "commander": "^14.0.3",
         "hono": "^4.12.16",
-        "jose": "^6.2.3",
         "react": "^19.1.0",
         "react-dom": "^19.1.0"
     },
@@ -67,6 +67,7 @@
     },
     "pnpm": {
         "onlyBuiltDependencies": [
+            "@adrianhall/cloudflare-auth",
             "esbuild",
             "sharp",
             "workerd"

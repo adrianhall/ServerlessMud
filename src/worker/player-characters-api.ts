@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { AuthVariables } from "@lib/cloudflare-auth";
+import type { AuthVariables } from "@adrianhall/cloudflare-auth";
 import {
   isPlayerCharacterGender,
   isValidCharacterName,

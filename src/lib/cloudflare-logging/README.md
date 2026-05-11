@@ -59,7 +59,7 @@ interface Logger {
 }
 ```
 
-The same interface is independently defined in `cloudflare-auth` so
+The same interface is independently defined in `@adrianhall/cloudflare-auth` so
 that the auth library can accept a logger without depending on this
 package. TypeScript structural typing ensures compatibility.
 
@@ -100,9 +100,9 @@ the runtime produces JSON like:
 }
 ```
 
-## Integration with cloudflare-auth
+## Integration with @adrianhall/cloudflare-auth
 
-The `cloudflare-auth` library accepts an optional `logger` on its
+The `@adrianhall/cloudflare-auth` library accepts an optional `logger` on its
 settings objects. When omitted it falls back to a simple
 `console.*`-based default.
 
@@ -112,7 +112,7 @@ import {
   developerAuthentication,
   cloudflareAccess,
   type AuthVariables
-} from "@lib/cloudflare-auth";
+} from "@adrianhall/cloudflare-auth";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 

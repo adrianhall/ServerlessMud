@@ -16,7 +16,7 @@ import {
   cloudflareAccess,
   type AuthVariables,
   type PathPolicy
-} from "@lib/cloudflare-auth";
+} from "@adrianhall/cloudflare-auth";
 import { createLogger } from "@lib/cloudflare-logging";
 
 // Re-export Durable Object classes so the Workers runtime can find them.
